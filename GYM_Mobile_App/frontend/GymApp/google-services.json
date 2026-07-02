@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "755990083589",
+    "project_id": "aurafit-e2db0",
+    "storage_bucket": "aurafit-e2db0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:755990083589:android:4ffc1d4772ea1de287846c",
+        "android_client_info": {
+          "package_name": "com.upex.aurafit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKbJJWvDMk_oYnvHl3Z3Xm8M_7ht8t5dM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
