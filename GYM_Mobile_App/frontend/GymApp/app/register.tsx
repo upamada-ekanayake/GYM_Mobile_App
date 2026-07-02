@@ -131,10 +131,10 @@ export default function RegisterScreen() {
 }
 
 /* ── Colour Tokens ── */
-const ACCENT = '#3B82F6';
-const BG = '#0D0D0D';
-const CARD = '#1A1A1A';
-const BORDER = '#2A2A2A';
+const ACCENT = '#8A2BE2'; // Aura Violet
+const BG = '#08080C'; // Obsidian Black
+const CARD = '#12121A'; // Deep Charcoal
+const BORDER = '#241C35'; // Deep Violet Border
 
 const styles = StyleSheet.create({
   screen: {
@@ -151,9 +151,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: CARD,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     height: 260,
     borderRadius: 130,
     backgroundColor: ACCENT,
-    opacity: 0.06,
+    opacity: 0.08,
   },
 
   heroContainer: {
@@ -215,8 +215,8 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 2 / 3,
     backgroundColor: CARD,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 24,
+    borderWidth: 1.5,
     borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',

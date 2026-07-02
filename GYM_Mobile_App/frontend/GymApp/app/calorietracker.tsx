@@ -17,13 +17,14 @@ import { Ionicons } from '@expo/vector-icons';
 import HamburgerMenu from '../components/HamburgerMenu';
 
 /* ── Colour Tokens (matching app-wide theme) ── */
-const ACCENT = '#3B82F6';
-const BG = '#0D0D0D';
-const CARD = '#1A1A1A';
-const BORDER = '#2A2A2A';
+const ACCENT = '#8A2BE2'; // Aura Violet
+const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
+const BG = '#08080C'; // Deep Obsidian
+const CARD = '#12121A'; // Deep Charcoal
+const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_SECONDARY = '#AAAAAA';
-const TEXT_MUTED = '#555555';
+const TEXT_SECONDARY = '#B3AEC6';
+const TEXT_MUTED = '#5C5570';
 const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
 const BACKEND_URL = 'http://192.168.1.5:5000';
@@ -250,7 +251,7 @@ export default function CalorieTrackerScreen() {
           <View style={styles.glowCircle} />
 
           {/* ── Proper Page Heading ── */}
-          <Text style={styles.pageTitle}>Calories Tracker</Text>
+          <Text style={styles.pageTitle}>AuraFit Calorie Tracker</Text>
           <View style={styles.titleUnderline} />
 
           {/* ── Form Container ── */}
@@ -271,7 +272,7 @@ export default function CalorieTrackerScreen() {
                   <Ionicons
                     name="male-outline"
                     size={22}
-                    color={gender === 'Male' ? BG : TEXT_SECONDARY}
+                    color={gender === 'Male' ? '#FFFFFF' : TEXT_SECONDARY}
                   />
                   <Text style={[styles.genderText, gender === 'Male' && styles.genderTextActive]}>
                     Male
@@ -289,7 +290,7 @@ export default function CalorieTrackerScreen() {
                   <Ionicons
                     name="female-outline"
                     size={22}
-                    color={gender === 'Female' ? BG : TEXT_SECONDARY}
+                    color={gender === 'Female' ? '#FFFFFF' : TEXT_SECONDARY}
                   />
                   <Text style={[styles.genderText, gender === 'Female' && styles.genderTextActive]}>
                     Female
@@ -401,7 +402,7 @@ export default function CalorieTrackerScreen() {
                     <Ionicons
                       name="thunderstorm-outline"
                       size={20}
-                      color={workoutType === 'HIIT' ? BG : ACCENT}
+                      color={workoutType === 'HIIT' ? '#FFFFFF' : ACCENT}
                     />
                     <Text style={[styles.workoutText, workoutType === 'HIIT' && styles.workoutTextActive]}>
                       HIIT
@@ -420,7 +421,7 @@ export default function CalorieTrackerScreen() {
                     <Ionicons
                       name="barbell-outline"
                       size={20}
-                      color={workoutType === 'Strength' ? BG : ACCENT}
+                      color={workoutType === 'Strength' ? '#FFFFFF' : ACCENT}
                     />
                     <Text style={[styles.workoutText, workoutType === 'Strength' && styles.workoutTextActive]}>
                       Strength
@@ -441,7 +442,7 @@ export default function CalorieTrackerScreen() {
                     <Ionicons
                       name="body-outline"
                       size={20}
-                      color={workoutType === 'Yoga' ? BG : ACCENT}
+                      color={workoutType === 'Yoga' ? '#FFFFFF' : ACCENT}
                     />
                     <Text style={[styles.workoutText, workoutType === 'Yoga' && styles.workoutTextActive]}>
                       Yoga
@@ -460,7 +461,7 @@ export default function CalorieTrackerScreen() {
                     <Ionicons
                       name="heart-outline"
                       size={20}
-                      color={workoutType === 'Cardio' ? BG : ACCENT}
+                      color={workoutType === 'Cardio' ? '#FFFFFF' : ACCENT}
                     />
                     <Text style={[styles.workoutText, workoutType === 'Cardio' && styles.workoutTextActive]}>
                       Cardio
@@ -552,12 +553,12 @@ const styles = StyleSheet.create({
     height: 260,
     borderRadius: 130,
     backgroundColor: ACCENT,
-    opacity: 0.06,
+    opacity: 0.08,
   },
 
   /* ── Page Title ── */
   pageTitle: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '900',
     color: TEXT_PRIMARY,
     textAlign: 'center',
@@ -566,7 +567,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   titleUnderline: {
-    width: 80,
+    width: 60,
     height: 4,
     backgroundColor: ACCENT,
     borderRadius: 2,
@@ -594,8 +595,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: CARD,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: BORDER,
     paddingHorizontal: 16,
     height: 56,
@@ -626,9 +627,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: CARD,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
-    borderRadius: 14,
+    borderRadius: 16,
     height: 56,
     gap: 8,
   },
@@ -642,7 +643,7 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   genderTextActive: {
-    color: BG,
+    color: '#FFFFFF',
   },
 
   /* ── Workout Type Selection ── */
@@ -663,7 +664,7 @@ const styles = StyleSheet.create({
     backgroundColor: CARD,
     borderWidth: 1.5,
     borderColor: BORDER,
-    borderRadius: 16,
+    borderRadius: 18,
     height: 60,
     gap: 8,
     paddingHorizontal: 12,
@@ -683,7 +684,7 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   workoutTextActive: {
-    color: BG,
+    color: '#FFFFFF',
   },
 
   /* ── Calculate Button ── */
@@ -694,7 +695,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     backgroundColor: ACCENT,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 8,
     shadowColor: ACCENT,
     shadowOffset: { width: 0, height: 6 },
@@ -714,7 +715,7 @@ const styles = StyleSheet.create({
   calculateButtonText: {
     fontSize: 17,
     fontWeight: '700',
-    color: BG,
+    color: '#FFFFFF',
     letterSpacing: 0.6,
   },
 
@@ -723,14 +724,14 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: CARD,
     borderWidth: 1.5,
-    borderColor: ACCENT,
-    borderRadius: 20,
+    borderColor: ACCENT_EMERALD,
+    borderRadius: 24,
     paddingVertical: 24,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
     // Shadow
-    shadowColor: ACCENT,
+    shadowColor: ACCENT_EMERALD,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
@@ -739,7 +740,7 @@ const styles = StyleSheet.create({
   resultEmojiText: {
     fontSize: 32,
     fontWeight: '800',
-    color: ACCENT,
+    color: ACCENT_EMERALD,
     marginBottom: 6,
     textAlign: 'center',
   },
@@ -753,17 +754,17 @@ const styles = StyleSheet.create({
   /* ── Custom Popup Modal ── */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: 'rgba(30, 30, 30, 0.92)',
+    backgroundColor: 'rgba(18, 18, 26, 0.95)',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1.5,
+    borderColor: BORDER,
     paddingVertical: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -784,7 +785,7 @@ const styles = StyleSheet.create({
   modalButton: {
     width: '100%',
     height: 50,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',

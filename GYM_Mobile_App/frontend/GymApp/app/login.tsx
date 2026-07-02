@@ -227,7 +227,7 @@ export default function LoginScreen() {
 
           {/* ── Logo Image ── */}
           <Image
-            source={require('../assets/images/01.png')}
+            source={require('../assets/images/aurafit-logo.png')}
             style={[
               styles.logoImage,
               keyboardOpen && styles.logoImageSmall,
@@ -236,7 +236,7 @@ export default function LoginScreen() {
           />
 
           {/* ── Sub-heading ── */}
-          <Text style={styles.subHeading}>Login to your Account</Text>
+          <Text style={styles.subHeading}>Welcome to AuraFit</Text>
 
           {/* ── Input Fields ── */}
           <View style={styles.inputContainer}>
@@ -344,11 +344,13 @@ export default function LoginScreen() {
 }
 
 /* ── Colour Tokens ── */
-const ACCENT = '#3B82F6'; // Vibrant blue
-const BG = '#0D0D0D';
-const CARD = '#1A1A1A';
+const ACCENT = '#8A2BE2'; // Aura Violet
+const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
+const BG = '#08080C'; // Deep Obsidian
+const CARD = '#12121A'; // Deep Charcoal
+const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_SECONDARY = '#AAAAAA';
+const TEXT_SECONDARY = '#B3AEC6'; // Soft purple-gray
 
 const styles = StyleSheet.create({
   /* ── Screen ── */
@@ -375,27 +377,28 @@ const styles = StyleSheet.create({
     height: 260,
     borderRadius: 130,
     backgroundColor: ACCENT,
-    opacity: 0.06,
+    opacity: 0.08,
   },
 
   /* ── Logo ── */
   logoImage: {
-    width: 450,
-    height: 450,
-    marginTop: -40,
-    marginBottom: -90,
-  },
-  logoImageSmall: {
     width: 180,
     height: 180,
-    marginTop: 0,
-    marginBottom: -30,
+    marginTop: 40,
+    marginBottom: 10,
+  },
+  logoImageSmall: {
+    width: 100,
+    height: 100,
+    marginTop: 20,
+    marginBottom: 5,
   },
   subHeading: {
-    fontSize: 15,
-    color: TEXT_SECONDARY,
+    fontSize: 16,
+    fontWeight: '700',
+    color: ACCENT_EMERALD,
     marginBottom: 40,
-    letterSpacing: 0.4,
+    letterSpacing: 0.6,
     textAlign: 'center',
   },
 
@@ -410,9 +413,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: CARD,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: BORDER,
     paddingHorizontal: 16,
     height: 56,
     width: '100%',
@@ -438,7 +441,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     backgroundColor: ACCENT,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 8,
     // shadow
     shadowColor: ACCENT,
@@ -450,7 +453,7 @@ const styles = StyleSheet.create({
   loginButtonText: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#0D0D0D',
+    color: '#FFFFFF',
     letterSpacing: 0.6,
   },
 
@@ -468,7 +471,7 @@ const styles = StyleSheet.create({
   registerLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: ACCENT,
+    color: ACCENT_EMERALD,
   },
   loginButtonDisabled: {
     opacity: 0.6,
@@ -477,17 +480,17 @@ const styles = StyleSheet.create({
   /* ── Custom Popup Modal ── */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: 'rgba(30, 30, 30, 0.92)',
+    backgroundColor: 'rgba(18, 18, 26, 0.95)',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1.5,
+    borderColor: BORDER,
     paddingVertical: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -508,7 +511,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   modalIconError: {
-    backgroundColor: ERROR_RED,
+    backgroundColor: '#EF4444',
   },
   modalTitle: {
     fontSize: 20,
@@ -528,13 +531,13 @@ const styles = StyleSheet.create({
   modalButton: {
     width: '100%',
     height: 50,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalButtonError: {
-    backgroundColor: ERROR_RED,
+    backgroundColor: '#EF4444',
   },
   modalButtonText: {
     fontSize: 16,

@@ -21,15 +21,17 @@ import * as ImagePicker from 'expo-image-picker';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /* ── Colour Tokens (matching app-wide theme) ── */
-const ACCENT = '#3B82F6';
-const BG = '#0D0D0D';
-const CARD = '#1A1A1A';
-const BORDER = '#2A2A2A';
+const ACCENT = '#8A2BE2'; // Aura Violet
+const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
+const BG = '#08080C'; // Deep Obsidian
+const CARD = '#12121A'; // Deep Charcoal
+const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_SECONDARY = '#AAAAAA';
-const TEXT_MUTED = '#555555';
+const TEXT_SECONDARY = '#B3AEC6';
+const TEXT_MUTED = '#5C5570';
 const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
+
 
 /* ── Backend Config ── */
 const BACKEND_URL = 'http://192.168.1.5:5000';
@@ -522,9 +524,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: CARD,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
@@ -538,7 +540,7 @@ const styles = StyleSheet.create({
     height: 260,
     borderRadius: 130,
     backgroundColor: ACCENT,
-    opacity: 0.06,
+    opacity: 0.08,
   },
 
   /* ── Page Title ── */
@@ -572,7 +574,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: ACCENT,
     overflow: 'hidden',
   },
@@ -639,8 +641,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: CARD,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: BORDER,
     paddingHorizontal: 16,
     height: 56,
@@ -687,7 +689,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     backgroundColor: ACCENT,
-    borderRadius: 14,
+    borderRadius: 16,
     gap: 8,
     shadowColor: ACCENT,
     shadowOffset: { width: 0, height: 6 },
@@ -701,7 +703,7 @@ const styles = StyleSheet.create({
   registerButtonText: {
     fontSize: 17,
     fontWeight: '700',
-    color: BG,
+    color: '#FFFFFF',
     letterSpacing: 0.6,
   },
 
@@ -719,23 +721,23 @@ const styles = StyleSheet.create({
   loginLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: ACCENT,
+    color: ACCENT_EMERALD,
   },
 
   /* ── Custom Popup Modal ── */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 30,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: 'rgba(30, 30, 30, 0.92)',
+    backgroundColor: 'rgba(18, 18, 26, 0.95)',
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1.5,
+    borderColor: BORDER,
     paddingVertical: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -779,7 +781,7 @@ const styles = StyleSheet.create({
   modalButton: {
     width: '100%',
     height: 50,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
