@@ -10,4 +10,7 @@ router.post('/predict-calories', aiModel.predictCalories);
 // Water Intake Predict
 router.post('/predict-water', aiModel.predictWaterIntake);
 
+// Food Scanner Predict
+router.post('/predict-food', aiModel.predictFood);
+
 module.exports = router;

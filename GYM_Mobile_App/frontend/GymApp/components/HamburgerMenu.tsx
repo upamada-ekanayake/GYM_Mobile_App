@@ -73,7 +73,8 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
       '/workouts',
       '/calorietracker',
       '/watertracker',
-      '/progressdashboard'
+      '/progressdashboard',
+      '/foodscanner'
     ];
     return restrictedRoutes.includes(route);
   };
@@ -308,6 +309,19 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
                   <Text style={getMenuItemStyles('/calorietracker').text}>Calorie Tracker</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/calorietracker').chevronColor} />
+              </TouchableOpacity>
+
+              {/* 6.5 Food Scanner */}
+              <TouchableOpacity
+                style={getMenuItemStyles('/foodscanner').container}
+                onPress={() => handleItemPress('/foodscanner')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.menuItemLeft}>
+                  <Ionicons name="scan-outline" size={22} color={getMenuItemStyles('/foodscanner').iconColor} />
+                  <Text style={getMenuItemStyles('/foodscanner').text}>Food Scanner</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/foodscanner').chevronColor} />
               </TouchableOpacity>
 
               {/* 7. Water Tracker */}

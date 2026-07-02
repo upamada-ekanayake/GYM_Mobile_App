@@ -97,3 +97,37 @@ exports.predictWaterIntake = async (req, res) => {
         return handleAIError(error, res);
     }
 };
+
+// --- 03. Food Scanner Image-to-Calorie Prediction --- //
+exports.predictFood = async (req, res) => {
+    try {
+        const { imageBase64 } = req.body;
+        if (!imageBase64) {
+            return res.status(400).json({ success: false, message: 'Image data in base64 format is required.' });
+        }
+
+        // Convert base64 to binary buffer
+        const buffer = Buffer.from(imageBase64, 'base64');
+        
+        // Wrap buffer in standard Blob (Node 18+ global feature)
+        const blob = new Blob([buffer], { type: 'image/jpeg' });
+        
+        // Construct native FormData
+        const formData = new FormData();
+        formData.append('file', blob, 'image.jpg');
+
+        // Forward multipart/form-data to the FastAPI server with timeout
+        const response = await axios.post(`${FASTAPI_BASE_URL}/predict/food-scanner`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            },
+            timeout: AXIOS_TIMEOUT
+        });
+
+        // Return prediction results to the client
+        return res.status(200).json(response.data);
+
+    } catch (error) {
+        return handleAIError(error, res);
+    }
+};
