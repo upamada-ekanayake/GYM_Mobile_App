@@ -1,300 +1,279 @@
-const User = require('../models/User');
-const Admin = require('../models/Admin');
-const Gym = require('../models/Gym');
-const Coach = require('../models/Coach');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const { auth, db } = require('../config/firebase');
+const axios = require('axios');
+require('dotenv').config();
+
+// Helper to verify current password using Google Identity Toolkit API
+const verifyPassword = async (email, password) => {
+    try {
+        await axios.post(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+            { email, password, returnSecureToken: true }
+        );
+        return true;
+    } catch (error) {
+        return false;
+    }
+};
 
 // --- 01. User Registration --- //
-
 exports.User_Registration = async (req, res) => {
     try {
         const { UserName, UserAge, UserNIC, UserContactNumber, Email, Password, ConfirmPassword, UserDP } = req.body;
 
-        // Check if User NIC is already registered
-        let user = await User.findOne({ UserNIC });
-        if (user) {
-            return res.status(400).json({ message: 'User NIC already registered' });
-        };
-
-        // Check Contact number has 10 degites 
-        if (UserContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
+        // Validation
+        if (!UserName || !UserAge || !UserNIC || !UserContactNumber || !Email || !Password || !ConfirmPassword) {
+            return res.status(400).json({ message: 'All fields are required' });
         }
-
-        // Check if the email is already registered 
-        let useremail = await User.findOne({ Email });
-        let adminemail = await Admin.findOne({ Email });
-        let gymemail = await Gym.findOne({ Email });
-        let coachemail = await Coach.findOne({ Email });
-
-        if (useremail || adminemail || gymemail || coachemail) {
-            return res.status(400).json({ message: 'Email already registered' });
-        }
-
-        // Check password length
-        if (Password.length < 6 || ConfirmPassword.length < 6) {
-            return res.status(400).json({ message: 'Entered password must be at least 6 characters long' });
-        }
-
-        // Check if the passwords are same
         if (Password !== ConfirmPassword) {
             return res.status(400).json({ message: 'Passwords are not same' });
         }
 
-        // Password hashing
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(Password, salt);
+        // Check if user already exists in Firestore
+        const userCheck = await db.collection('users').where('Email', '==', Email).get();
+        if (!userCheck.empty) {
+            return res.status(400).json({ message: 'Email already registered' });
+        }
 
-        // Save new user 
-        const newUser = new User({ UserName, UserAge, UserNIC, UserContactNumber, Email, Password: hashedPassword, UserDP, Role: 'User', Approve: true })
-        await newUser.save();
+        // Create Firebase Auth user
+        const userRecord = await auth.createUser({
+            email: Email,
+            password: Password,
+            displayName: UserName
+        });
 
-        const userObj = newUser.toObject();
-        delete userObj.Password;
+        // Save profile in Firestore users collection
+        const userData = {
+            UserName,
+            UserAge: Number(UserAge),
+            UserNIC,
+            UserContactNumber,
+            Email,
+            UserDP: UserDP || null,
+            Role: 'User',
+            Approve: true,
+            Workouts: []
+        };
 
-        res.status(201).json({ message: 'User registered successfully', newUser: userObj });
+        await db.collection('users').doc(userRecord.uid).set(userData);
+
+        res.status(201).json({
+            message: 'User registered successfully',
+            newUser: { _id: userRecord.uid, ...userData }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 02. User Login --- //
-
 exports.User_Login = async (req, res) => {
     try {
         const { Email, Password } = req.body;
 
-        // Check if user is exist or not 
-        let user = await User.findOne({ Email });
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid email' });
+        if (!Email || !Password) {
+            return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        // Check if password is correct
-        let isMatch = await bcrypt.compare(Password, user.Password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid password' });
+        // Authenticate with Google Identity Toolkit REST API
+        let authData;
+        try {
+            const authRes = await axios.post(
+                `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+                { email: Email, password: Password, returnSecureToken: true }
+            );
+            authData = authRes.data;
+        } catch (authError) {
+            return res.status(400).json({ message: 'Invalid email or password' });
         }
 
-        const token = jwt.sign(
-            { userId: user._id, role: user.Role, email: user.Email },
-            process.env.JWT_SECRET || 'fallback_secret',
-            { expiresIn: '7d' }
-        );
+        const uid = authData.localId;
+        const token = authData.idToken;
 
-        const userObj = user.toObject();
-        delete userObj.Password;
+        // Fetch Firestore profile
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: 'Profile data not found in database' });
+        }
 
-        res.status(200).json({ message: 'Login successfully', user: userObj, token });
+        const userData = userDoc.data();
+
+        res.status(200).json({
+            message: 'Login successfully',
+            user: { _id: uid, ...userData },
+            token
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 03. Update Contact Number --- //
-
 exports.User_UpdateContactNumber = async (req, res) => {
     try {
         const { userId } = req.params;
         const { newContactNumber } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        if (!newContactNumber || newContactNumber.length !== 10) {
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
+        }
+
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Check Contact number has 10 degites
-        if (newContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
-        }
+        await userRef.update({ UserContactNumber: newContactNumber });
+        const updatedDoc = await userRef.get();
 
-        // Update contactnumber 
-        let update_user = await User.findByIdAndUpdate(
-            userId,
-            { $set: { UserContactNumber: newContactNumber } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_user) {
-            return res.status(404).json({ message: 'Failed to update contact number' });
-        }
-
-        res.status(200).json({ message: 'Contact number updated successfully', update_user });
+        res.status(200).json({
+            message: 'Contact number updated successfully',
+            update_user: { _id: userId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 04. Update Password --- //
-
 exports.User_UpdatePassword = async (req, res) => {
     try {
         const { userId } = req.params;
         const { oldPassword, newPassword, confirmNewPassword } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Check if the old password is correct
-        let isMatch = await bcrypt.compare(oldPassword, user.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid old password' });
+        // Verify old password
+        const email = userDoc.data().Email;
+        const isCorrect = await verifyPassword(email, oldPassword);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid old password' });
         }
 
-        // Check password length 
-        if (newPassword.length < 6 || confirmNewPassword.length < 6) {
-            return res.status(404).json({ message: 'Entered new password must be at least 6 characters long' });
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
         }
-
-        // Check if the new passwords are same 
         if (newPassword !== confirmNewPassword) {
-            return res.status(404).json({ message: 'New passwords are not same' });
+            return res.status(400).json({ message: 'New passwords are not same' });
         }
 
-        // Hash new password 
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(newPassword, salt);
+        // Update password in Firebase Auth
+        await auth.updateUser(userId, { password: newPassword });
 
-        // Update password
-        let update_password = await User.findByIdAndUpdate(
-            userId,
-            { $set: { Password: hashedPassword } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_password) {
-            return res.status(404).json({ message: 'Failed to update password' });
-        }
-
-        res.status(200).json({ message: 'Password updated successfully', update_password });
+        res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 05. Update User DP --- //
-
 exports.User_UpdateDP = async (req, res) => {
     try {
         const { userId } = req.params;
         const { UserDP } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Update Image
-        let update_dp = await User.findByIdAndUpdate(
-            userId,
-            { $set: { UserDP: UserDP } },
-            { returnDocument: 'after' }
-        );
+        await userRef.update({ UserDP: UserDP || null });
+        const updatedDoc = await userRef.get();
 
-        if (!update_dp) {
-            return res.status(404).json({ message: 'Failed to update User DP' });
-        }
-
-        res.status(200).json({ message: 'User DP updated successfully', update_dp });
+        res.status(200).json({
+            message: 'User DP updated successfully',
+            update_dp: { _id: userId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 06. Get User Role --- //
-
 exports.User_Role = async (req, res) => {
     try {
         const { Email } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findOne({ Email });
-        if (!user) {
+        const userCheck = await db.collection('users').where('Email', '==', Email).get();
+        if (userCheck.empty) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        res.status(200).json({ role: user.Role });
+        const userDoc = userCheck.docs[0];
+        res.status(200).json({ role: userDoc.data().Role });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 07. Get User Details --- //
-
 exports.User_Details = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId).select('-Password');
-        if (!user) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        res.status(200).json({ user });
+        res.status(200).json({
+            user: { _id: userId, ...userDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 08. Delete User --- //
-
 exports.User_Detele = async (req, res) => {
     try {
         const { userId } = req.params;
         const { password } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Check if the password is correct
-        let isMatch = await bcrypt.compare(password, user.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid password' });
+        // Verify password
+        const email = userDoc.data().Email;
+        const isCorrect = await verifyPassword(email, password);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid password' });
         }
 
-        // Delete user
-        let delete_user = await User.findByIdAndDelete(userId);
-        if (!delete_user) {
-            return res.status(404).json({ message: 'Failed to delete user' });
-        }
+        // Delete from Firebase Auth
+        await auth.deleteUser(userId);
 
-        res.status(200).json({ message: 'User deleted successfully', delete_user });
+        // Delete from Firestore
+        await userRef.delete();
+
+        res.status(200).json({
+            message: 'User deleted successfully',
+            delete_user: { _id: userId, ...userDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 09. Get User Approval Status --- //
-
 exports.User_GetUserApprovalStatus = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        res.status(200).json({ approvalStatus: user.Approve });
+        res.status(200).json({ approvalStatus: userDoc.data().Approve });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

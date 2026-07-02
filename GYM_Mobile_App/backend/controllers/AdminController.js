@@ -1,305 +1,289 @@
-const User = require('../models/User');
-const Admin = require('../models/Admin');
-const Gym = require('../models/Gym');
-const Coach = require('../models/Coach');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const { auth, db } = require('../config/firebase');
+const axios = require('axios');
+require('dotenv').config();
+
+// Helper to verify current password using Google Identity Toolkit API
+const verifyPassword = async (email, password) => {
+    try {
+        await axios.post(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+            { email, password, returnSecureToken: true }
+        );
+        return true;
+    } catch (error) {
+        return false;
+    }
+};
 
 // --- 01. Admin Registration --- //
-
 exports.Admin_Registration = async (req, res) => {
     try {
         const { AdminName, AdminAge, AdminNIC, AdminContactNumber, Email, Password, ConfirmPassword, AdminDP } = req.body;
 
-        // Check if Admin NIC is already registered
-        let admin = await Admin.findOne({ AdminNIC });
-        if (admin) {
-            return res.status(400).json({ message: 'Admin NIC already registered' });
+        // Validation
+        if (!AdminName || !AdminAge || !AdminNIC || !AdminContactNumber || !Email || !Password || !ConfirmPassword) {
+            return res.status(400).json({ message: 'All fields are required' });
         }
-
-        // Check Contact number has 10 degites 
         if (AdminContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
         }
-
-        // Check if the email is already registered 
-        let useremail = await User.findOne({ Email });
-        let adminemail = await Admin.findOne({ Email });
-        let gymemail = await Gym.findOne({ Email });
-        let coachemail = await Coach.findOne({ Email });
-
-        if (useremail || adminemail || gymemail || coachemail) {
-            return res.status(400).json({ message: 'Email already registered' });
-        }
-
-        // Check password length
-        if (Password.length < 6 || ConfirmPassword.length < 6) {
+        if (Password.length < 6) {
             return res.status(400).json({ message: 'Password must be at least 6 characters long' });
         }
-
-        // Check if the passwords are same
         if (Password !== ConfirmPassword) {
             return res.status(400).json({ message: 'Passwords are not same' });
         }
 
-        // Password hashing
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(Password, salt);
+        // Check if email already registered in Firestore
+        const checkEmail = await db.collection('users').where('Email', '==', Email).get();
+        if (!checkEmail.empty) {
+            return res.status(400).json({ message: 'Email already registered' });
+        }
 
-        // Save new admin 
-        const newAdmin = new Admin({ AdminName, AdminAge, AdminNIC, AdminContactNumber, Email, Password: hashedPassword, AdminDP, Role: 'Admin', Approve: false })
-        await newAdmin.save();
+        // Create user in Firebase Auth
+        const userRecord = await auth.createUser({
+            email: Email,
+            password: Password,
+            displayName: AdminName
+        });
 
-        const adminObj = newAdmin.toObject();
-        delete adminObj.Password;
+        // Save metadata in users collection
+        const adminData = {
+            AdminName,
+            AdminAge: Number(AdminAge),
+            AdminNIC,
+            AdminContactNumber,
+            Email,
+            AdminDP: AdminDP || null,
+            Role: 'Admin',
+            Approve: false
+        };
 
-        res.status(201).json({ message: 'Admin registered successfully', newAdmin: adminObj });
+        await db.collection('users').doc(userRecord.uid).set(adminData);
+
+        res.status(201).json({
+            message: 'Admin registered successfully',
+            newAdmin: { _id: userRecord.uid, ...adminData }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 02. Admin Login --- //
-
 exports.Admin_Login = async (req, res) => {
     try {
         const { Email, Password } = req.body;
 
-        // Check if admin is exist or not 
-        let admin = await Admin.findOne({ Email });
-        if (!admin) {
-            return res.status(400).json({ message: 'Invalid email' });
+        if (!Email || !Password) {
+            return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        // Check if password is correct
-        let isMatch = await bcrypt.compare(Password, admin.Password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid password' });
+        // Verify with Identity Toolkit
+        let authData;
+        try {
+            const authRes = await axios.post(
+                `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+                { email: Email, password: Password, returnSecureToken: true }
+            );
+            authData = authRes.data;
+        } catch (authError) {
+            return res.status(400).json({ message: 'Invalid email or password' });
         }
 
-        // Check Admin is Approve or not 
-        if (!admin.Approve) {
+        const uid = authData.localId;
+        const token = authData.idToken;
+
+        // Fetch Firestore metadata
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: 'Profile not found in database' });
+        }
+
+        const adminData = userDoc.data();
+
+        // Check if admin is approved
+        if (!adminData.Approve) {
             return res.status(400).json({ message: 'Admin is not approved yet' });
         }
 
-        const token = jwt.sign(
-            { userId: admin._id, role: admin.Role, email: admin.Email },
-            process.env.JWT_SECRET || 'fallback_secret',
-            { expiresIn: '7d' }
-        );
-
-        const adminObj = admin.toObject();
-        delete adminObj.Password;
-
-        res.status(200).json({ message: 'Login successfully', admin: adminObj, token });
+        res.status(200).json({
+            message: 'Login successfully',
+            admin: { _id: uid, ...adminData },
+            token
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 03. Update Contact Number --- //
-
 exports.Admin_UpdateContactNumber = async (req, res) => {
     try {
         const { adminId } = req.params;
         const { newContactNumber } = req.body;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId);
-        if (!admin) {
+        if (!newContactNumber || newContactNumber.length !== 10) {
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
+        }
+
+        const adminRef = db.collection('users').doc(adminId);
+        const adminDoc = await adminRef.get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        // Check Contact number has 10 degites
-        if (newContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
-        }
+        await adminRef.update({ AdminContactNumber: newContactNumber });
+        const updatedDoc = await adminRef.get();
 
-        // Update contactnumber 
-        let update_admin = await Admin.findByIdAndUpdate(
-            adminId,
-            { $set: { AdminContactNumber: newContactNumber } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_admin) {
-            return res.status(404).json({ message: 'Failed to update contact number' });
-        }
-
-        res.status(200).json({ message: 'Contact number updated successfully', update_admin });
+        res.status(200).json({
+            message: 'Contact number updated successfully',
+            update_admin: { _id: adminId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 04. Update Password --- //
-
 exports.Admin_UpdatePassword = async (req, res) => {
     try {
         const { adminId } = req.params;
         const { oldPassword, newPassword, confirmNewPassword } = req.body;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId);
-        if (!admin) {
+        const adminRef = db.collection('users').doc(adminId);
+        const adminDoc = await adminRef.get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        // Check if the old password is correct
-        let isMatch = await bcrypt.compare(oldPassword, admin.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid old password' });
+        // Verify old password
+        const email = adminDoc.data().Email;
+        const isCorrect = await verifyPassword(email, oldPassword);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid old password' });
         }
 
-        // Check password length 
-        if (newPassword.length < 6 || confirmNewPassword.length < 6) {
-            return res.status(404).json({ message: 'Entered new passwords must be at least 6 characters long' });
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
         }
-
-        // Check if the new passwords are same 
         if (newPassword !== confirmNewPassword) {
-            return res.status(404).json({ message: 'Entered new passwords are not matching' });
+            return res.status(400).json({ message: 'New passwords are not matching' });
         }
 
-        // Hash new password 
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(newPassword, salt);
+        // Update password in Firebase Auth
+        await auth.updateUser(adminId, { password: newPassword });
 
-        // Update password
-        let update_password = await Admin.findByIdAndUpdate(
-            adminId,
-            { $set: { Password: hashedPassword } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_password) {
-            return res.status(404).json({ message: 'Failed to update password' });
-        }
-
-        res.status(200).json({ message: 'Password updated successfully', update_password });
+        res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 05. Update Admin DP --- //
-
 exports.Admin_UpdateDP = async (req, res) => {
     try {
         const { adminId } = req.params;
         const { AdminDP } = req.body;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId);
-        if (!admin) {
+        const adminRef = db.collection('users').doc(adminId);
+        const adminDoc = await adminRef.get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        // Update admin DP
-        let update_dp = await Admin.findByIdAndUpdate(
-            adminId,
-            { $set: { AdminDP } },
-            { returnDocument: 'after' }
-        );
+        await adminRef.update({ AdminDP: AdminDP || null });
+        const updatedDoc = await adminRef.get();
 
-        if (!update_dp) {
-            return res.status(404).json({ message: 'Failed to update admin DP' });
-        }
-
-        res.status(200).json({ message: 'Admin DP updated successfully', update_dp });
+        res.status(200).json({
+            message: 'Admin DP updated successfully',
+            update_admin: { _id: adminId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 06. Get Admin Role --- //
-
 exports.Admin_Role = async (req, res) => {
     try {
         const { Email } = req.body;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findOne({ Email });
-        if (!admin) {
+        const checkEmail = await db.collection('users').where('Email', '==', Email).get();
+        if (checkEmail.empty) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        res.status(200).json({ role: admin.Role });
+        const adminDoc = checkEmail.docs[0];
+        res.status(200).json({ role: adminDoc.data().Role });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 07. Get Admin Details --- //
-
 exports.Admin_Details = async (req, res) => {
     try {
         const { adminId } = req.params;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId).select('-Password');
-        if (!admin) {
+        const adminDoc = await db.collection('users').doc(adminId).get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        res.status(200).json({ admin });
+        res.status(200).json({
+            admin: { _id: adminId, ...adminDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 08. Delete Admin --- //
-
 exports.Admin_Delete = async (req, res) => {
     try {
         const { adminId } = req.params;
         const { Password } = req.body;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId);
-        if (!admin) {
+        const adminRef = db.collection('users').doc(adminId);
+        const adminDoc = await adminRef.get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        // Check if the password is correct
-        let isMatch = await bcrypt.compare(Password, admin.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid password' });
+        // Verify password
+        const email = adminDoc.data().Email;
+        const isCorrect = await verifyPassword(email, Password);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid password' });
         }
 
-        // Delete admin
-        let delete_admin = await Admin.findByIdAndDelete(adminId);
-        if (!delete_admin) {
-            return res.status(404).json({ message: 'Failed to delete admin' });
-        }
+        // Delete from Firebase Auth
+        await auth.deleteUser(adminId);
 
-        res.status(200).json({ message: 'Admin deleted successfully', delete_admin });
+        // Delete from Firestore
+        await adminRef.delete();
+
+        res.status(200).json({
+            message: 'Admin deleted successfully',
+            delete_admin: { _id: adminId, ...adminDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 09. Get Admin Approval Status --- //
-
 exports.Admin_GetAdminApprovalStatus = async (req, res) => {
     try {
         const { adminId } = req.params;
 
-        // Check if admin is exist or not
-        let admin = await Admin.findById(adminId);
-        if (!admin) {
+        const adminDoc = await db.collection('users').doc(adminId).get();
+        if (!adminDoc.exists) {
             return res.status(404).json({ message: 'Admin not found' });
         }
 
-        res.status(200).json({ approvalStatus: admin.Approve });
+        res.status(200).json({ approvalStatus: adminDoc.data().Approve });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

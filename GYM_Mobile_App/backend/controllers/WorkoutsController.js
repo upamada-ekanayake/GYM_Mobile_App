@@ -1,34 +1,40 @@
-const User = require('../models/User');
+const { db, admin } = require('../config/firebase');
 
-// --- 01. create User Workouts -- //
-
+// --- 01. Create User Workouts -- //
 exports.User_Workout_Create = async (req, res) => {
     try {
         const { userId } = req.params;
         const { workoutName, sets, reps, weight, duration } = req.body;
 
-        // Check if user is exist or not
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const newWorkout = await User.findByIdAndUpdate(
-            userId,
-            { $push: { Workouts: { workoutName, sets, reps, weight, duration } } },
-            { returnDocument: 'after' }
-        );
+        // Generate a random unique ID for the workout subdocument
+        const workoutId = Math.random().toString(36).substring(2, 11);
+        const workoutObj = {
+            _id: workoutId,
+            workoutName,
+            sets: Number(sets) || 0,
+            reps: Number(reps) || 0,
+            weight: Number(weight) || 0,
+            duration: Number(duration) || 0
+        };
 
-        if (!newWorkout) {
-            return res.status(404).json({ message: 'Failed to create workout' });
-        }
+        await userRef.update({
+            Workouts: admin.firestore.FieldValue.arrayUnion(workoutObj)
+        });
 
-        res.status(201).json({ message: 'Workout created successfully', newWorkout });
+        res.status(201).json({
+            message: 'Workout created successfully',
+            newWorkout: { _id: userId, Workouts: [workoutObj] }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
-
 
 // --- 02. Update Workout Sets --- //
 exports.User_Workout_UpdateSets = async (req, res) => {
@@ -36,215 +42,201 @@ exports.User_Workout_UpdateSets = async (req, res) => {
         const { userId, workoutId } = req.params;
         const { sets } = req.body;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
+        let workouts = userDoc.data().Workouts || [];
+        const workout = workouts.find(w => w._id === workoutId);
         if (!workout) {
             return res.status(404).json({ message: 'Workout not found' });
         }
 
-        let updatedUser = await User.findOneAndUpdate(
-            { _id: userId },
-            { $set: { "Workouts.$[elem].sets": sets } },
-            {
-                arrayFilters: [{ "elem._id": workoutId }],
-                returnDocument: 'after'
-            }
-        );
+        workout.sets = Number(sets) || 0;
+        await userRef.update({ Workouts: workouts });
 
-        res.status(200).json({ message: 'Workout sets updated successfully', updatedUser });
+        res.status(200).json({
+            message: 'Workout sets updated successfully',
+            updatedUser: { _id: userId, Workouts: workouts }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 03. Update Workout reps --- //
-
+// --- 03. Update Workout Reps --- //
 exports.User_Workout_UpdateReps = async (req, res) => {
     try {
         const { userId, workoutId } = req.params;
         const { reps } = req.body;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
+        let workouts = userDoc.data().Workouts || [];
+        const workout = workouts.find(w => w._id === workoutId);
         if (!workout) {
             return res.status(404).json({ message: 'Workout not found' });
         }
 
-        let updatedUser = await User.findOneAndUpdate(
-            { _id: userId },
-            { $set: { "Workouts.$[elem].reps": reps } },
-            {
-                arrayFilters: [{ "elem._id": workoutId }],
-                returnDocument: 'after'
-            }
-        );
+        workout.reps = Number(reps) || 0;
+        await userRef.update({ Workouts: workouts });
 
-        res.status(200).json({ message: 'Workout reps updated successfully', updatedUser });
+        res.status(200).json({
+            message: 'Workout reps updated successfully',
+            updatedUser: { _id: userId, Workouts: workouts }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 04. Update Workout Weight -- //
-
 exports.User_Workout_UpdateWeight = async (req, res) => {
     try {
         const { userId, workoutId } = req.params;
         const { weight } = req.body;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
+        let workouts = userDoc.data().Workouts || [];
+        const workout = workouts.find(w => w._id === workoutId);
         if (!workout) {
             return res.status(404).json({ message: 'Workout not found' });
         }
 
-        let updatedUser = await User.findOneAndUpdate(
-            { _id: userId },
-            { $set: { "Workouts.$[elem].weight": weight } },
-            {
-                arrayFilters: [{ "elem._id": workoutId }],
-                returnDocument: 'after'
-            }
-        );
+        workout.weight = Number(weight) || 0;
+        await userRef.update({ Workouts: workouts });
 
-        res.status(200).json({ message: 'Workout weight updated successfully', updatedUser });
+        res.status(200).json({
+            message: 'Workout weight updated successfully',
+            updatedUser: { _id: userId, Workouts: workouts }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 05. Update Workout Duration -- //
-
 exports.User_Workout_UpdateDuration = async (req, res) => {
     try {
         const { userId, workoutId } = req.params;
         const { duration } = req.body;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
+        let workouts = userDoc.data().Workouts || [];
+        const workout = workouts.find(w => w._id === workoutId);
         if (!workout) {
             return res.status(404).json({ message: 'Workout not found' });
         }
 
-        let updatedUser = await User.findOneAndUpdate(
-            { _id: userId },
-            { $set: { "Workouts.$[elem].duration": duration } },
-            {
-                arrayFilters: [{ "elem._id": workoutId }],
-                returnDocument: 'after'
-            }
-        );
+        workout.duration = Number(duration) || 0;
+        await userRef.update({ Workouts: workouts });
 
-        res.status(200).json({ message: 'Workout duration updated successfully', updatedUser });
+        res.status(200).json({
+            message: 'Workout duration updated successfully',
+            updatedUser: { _id: userId, Workouts: workouts }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 06. Delete Workout -- //
-
 exports.User_Workout_Delete = async (req, res) => {
     try {
         const { userId, workoutId } = req.params;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
-        if (!workout) {
-            return res.status(404).json({ message: 'Workout not found' });
-        }
+        let workouts = userDoc.data().Workouts || [];
+        const updatedWorkouts = workouts.filter(w => w._id !== workoutId);
+        await userRef.update({ Workouts: updatedWorkouts });
 
-        let updatedUser = await User.findByIdAndUpdate(
-            userId,
-            { $pull: { Workouts: { _id: workoutId } } },
-            { returnDocument: 'after' }
-        );
-
-        res.status(200).json({ message: 'Workout deleted successfully', updatedUser });
+        res.status(200).json({
+            message: 'Workout deleted successfully',
+            updatedUser: { _id: userId, Workouts: updatedWorkouts }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-// --- 07. Get workout details -- //
-
+// --- 07. Get Workout Details -- //
 exports.User_Workout_GetDetails = async (req, res) => {
     try {
         const { userId, workoutId } = req.params;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workout = user.Workouts.id(workoutId);
+        let workouts = userDoc.data().Workouts || [];
+        const workout = workouts.find(w => w._id === workoutId);
         if (!workout) {
             return res.status(404).json({ message: 'Workout not found' });
         }
 
-        res.status(200).json({ message: 'Workout details fetched successfully', workout });
+        res.status(200).json({
+            message: 'Workout details fetched successfully',
+            workout
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 08. Get all workout details -- //
-
+// --- 08. Get All Workout Details -- //
 exports.User_Workout_GetAllDetails = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        let workouts = user.Workouts;
-        if (!workouts) {
-            return res.status(404).json({ message: 'Workouts not found' });
-        }
+        const workouts = userDoc.data().Workouts || [];
 
-        res.status(200).json({ message: 'Workouts details fetched successfully', workouts });
+        res.status(200).json({
+            message: 'Workouts details fetched successfully',
+            workouts
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-// --- 09. Get workout analytics summary -- //
+// --- 09. Get Workout Analytics Summary -- //
 exports.User_Workout_GetAnalyticsSummary = async (req, res) => {
     try {
         const userId = req.user.userId;
 
-        let user = await User.findById(userId);
-        if (!user) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const workouts = user.Workouts || [];
+        const workouts = userDoc.data().Workouts || [];
 
         let totalVolume = 0;
         let totalActiveMinutes = 0;

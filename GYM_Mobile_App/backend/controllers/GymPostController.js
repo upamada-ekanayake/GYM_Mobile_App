@@ -1,383 +1,351 @@
-const GymPost = require('../models/GymPost');
-const Gym = require('../models/Gym');
-
+const { db, admin } = require('../config/firebase');
 
 // --- 01. Create Gym Post --- //
-
 exports.createGymPost = async (req, res) => {
     try {
         const { gymId } = req.params;
         const { gymInformation, gymFacilities, openHours, closeHours, gymContactNumber, city, packages, gymImg } = req.body;
 
-        // Check if the Gym ID is registered 
-        let gym = await Gym.findById(gymId);
-        if (!gym) {
+        const gymDoc = await db.collection('users').doc(gymId).get();
+        if (!gymDoc.exists) {
             return res.status(400).json({ message: 'Gym not found' });
         }
 
+        const gym = gymDoc.data();
         if (!gym.Approve) {
             return res.status(400).json({ message: 'Gym is not approved, So you cant create Gym post' });
         }
 
-        let GymId = await GymPost.findOne({ gymId });
-        if (GymId) {
+        const existingQuery = await db.collection('gymPosts').where('gymId', '==', gymId).get();
+        if (!existingQuery.empty) {
             return res.status(400).json({ message: 'Gym already create Information' });
+        }
+
+        const formattedFacilities = (gymFacilities || []).map(f => ({
+            _id: Math.random().toString(36).substring(2, 11),
+            facility: f.facility
+        }));
+
+        const formattedPackages = (packages || []).map(p => ({
+            _id: Math.random().toString(36).substring(2, 11),
+            packageName: p.packageName,
+            price: p.price,
+            duration: p.duration,
+            description: p.description
+        }));
+
+        const postData = {
+            gymId,
+            gymInformation,
+            gymFacilities: formattedFacilities,
+            openHours,
+            closeHours,
+            city,
+            gymContactNumber,
+            packages: formattedPackages,
+            gymImg: gymImg || null
         };
 
-        let gymPost = new GymPost({ gymId, gymInformation, gymFacilities, openHours, closeHours, city, gymContactNumber, packages, gymImg });
-        await gymPost.save();
+        const postRef = await db.collection('gymPosts').add(postData);
 
-        res.status(201).json({ message: 'Gym Post created successfully', gymPost });
+        res.status(201).json({
+            message: 'Gym Post created successfully',
+            gymPost: { _id: postRef.id, ...postData }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 02. Update Gym Information --- //
-
-exports.updateGymPostInformation = async (req, res) => {
+// --- Helper to update field in GymPost --- //
+const updateGymPostField = async (req, res, fieldName, successMsg) => {
     try {
         const { gymPostId } = req.params;
-        const { gymInformation } = req.body;
+        const value = req.body[fieldName];
 
-        // Update gym information in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { gymInformation: gymInformation } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym post Information updated successfully', gymPost });
+        await postRef.update({ [fieldName]: value });
+        const updatedDoc = await postRef.get();
 
+        res.status(200).json({
+            message: successMsg,
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
+// --- 02. Update Gym Information --- //
+exports.updateGymPostInformation = async (req, res) => {
+    await updateGymPostField(req, res, 'gymInformation', 'Gym post Information updated successfully');
+};
 
 // --- 03. Add Gym Facilities --- //
-
 exports.addGymFacilities = async (req, res) => {
     try {
         const { gymPostId } = req.params;
         const { facility } = req.body;
 
-        // Add facility to gym info 
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $push: { gymFacilities: { facility } } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym facility added successfully', gymPost });
+        const facilityId = Math.random().toString(36).substring(2, 11);
+        const facilityObj = { _id: facilityId, facility };
 
+        await postRef.update({
+            gymFacilities: admin.firestore.FieldValue.arrayUnion(facilityObj)
+        });
+
+        const updatedDoc = await postRef.get();
+
+        res.status(200).json({
+            message: 'Gym facility added successfully',
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 04. Delete Gym Facilities --- //
-
 exports.deleteGymFacilities = async (req, res) => {
     try {
         const { gymPostId } = req.params;
         const { facilityId } = req.body;
 
-        // Remove facility from gym info
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $pull: { gymFacilities: { _id: facilityId } } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym facility deleted successfully', gymPost });
+        let facilities = postDoc.data().gymFacilities || [];
+        const updated = facilities.filter(f => f._id !== facilityId);
 
+        await postRef.update({ gymFacilities: updated });
+        const updatedDoc = await postRef.get();
+
+        res.status(200).json({
+            message: 'Gym facility deleted successfully',
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
-
 
 // --- 05. Update Open Hours --- //
-
 exports.updateOpenHours = async (req, res) => {
-    try {
-        const { gymPostId } = req.params;
-        const { openHours } = req.body;
-
-        // Update open hours in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { openHours: openHours } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
-            return res.status(400).json({ message: 'Gym post not found' });
-        }
-
-        res.status(200).json({ message: 'Gym post Open Hours updated successfully', gymPost });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
-    }
+    await updateGymPostField(req, res, 'openHours', 'Open hours updated successfully');
 };
-
 
 // --- 06. Update Close Hours --- //
-
 exports.updateCloseHours = async (req, res) => {
-    try {
-        const { gymPostId } = req.params;
-        const { closeHours } = req.body;
-
-        // Update close hours in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { closeHours: closeHours } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
-            return res.status(400).json({ message: 'Gym post not found' });
-        }
-
-        res.status(200).json({ message: 'Gym post Close Hours updated successfully', gymPost });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
-    }
+    await updateGymPostField(req, res, 'closeHours', 'Close hours updated successfully');
 };
 
-
 // --- 07. Update Gym Contact Number --- //
-
 exports.updateGymPostContactNumber = async (req, res) => {
     try {
         const { gymPostId } = req.params;
-        const { newContactNumber } = req.body;
+        const { gymContactNumber } = req.body;
 
-        // Check contact number has 10 degites 
-        if (newContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
+        if (!gymContactNumber || gymContactNumber.length !== 10) {
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
         }
 
-        // Update contact number in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { gymContactNumber: newContactNumber } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym post contact Number updated successfully', gymPost });
+        await postRef.update({ gymContactNumber });
+        const updatedDoc = await postRef.get();
 
+        res.status(200).json({
+            message: 'Contact number updated successfully',
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
-
 
 // --- 08. Update City --- //
-
 exports.updateCity = async (req, res) => {
-    try {
-        const { gymPostId } = req.params;
-        const { city } = req.body;
-
-        // Update city in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { city: city } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
-            return res.status(400).json({ message: 'Gym post not found' });
-        }
-
-        res.status(200).json({ message: 'Gym post city updated successfully', gymPost });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
-    }
+    await updateGymPostField(req, res, 'city', 'City updated successfully');
 };
 
-
-// --- 09. Add Gym Packages --- //
-
+// --- 09. Add Package --- //
 exports.addGymPackage = async (req, res) => {
     try {
         const { gymPostId } = req.params;
-        const { packageName, packagePrice, packageDuration, features } = req.body;
+        const { packageName, price, duration, description } = req.body;
 
-        // Add packages to gym info 
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $push: { packages: { packageName: packageName, packagePrice: packagePrice, packageDuration: packageDuration, features: features } } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym package added successfully', gymPost });
+        const packageId = Math.random().toString(36).substring(2, 11);
+        const packageObj = {
+            _id: packageId,
+            packageName,
+            price: Number(price) || 0,
+            duration,
+            description
+        };
 
+        await postRef.update({
+            packages: admin.firestore.FieldValue.arrayUnion(packageObj)
+        });
+
+        const updatedDoc = await postRef.get();
+
+        res.status(200).json({
+            message: 'Gym package added successfully',
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 10. Delete Gym Packages --- //
-
+// --- 10. Delete Package --- //
 exports.deleteGymPackages = async (req, res) => {
     try {
         const { gymPostId } = req.params;
         const { packageId } = req.body;
 
-        // Remove package from gym info
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $pull: { packages: { _id: packageId } } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym package deleted successfully', gymPost });
+        let packages = postDoc.data().packages || [];
+        const updated = packages.filter(p => p._id !== packageId);
 
+        await postRef.update({ packages: updated });
+        const updatedDoc = await postRef.get();
+
+        res.status(200).json({
+            message: 'Gym package deleted successfully',
+            gymPost: { _id: gymPostId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 11. Update Gym post Image --- //
-
+// --- 11. Update Gym Image --- //
 exports.updateGymPostImage = async (req, res) => {
-    try {
-        const { gymPostId } = req.params;
-        const { gymImg } = req.body;
-
-        if (!gymImg) {
-            return res.status(400).json({ message: 'Gym image URL is required' });
-        }
-
-        // Update gym image in database
-        let gymPost = await GymPost.findByIdAndUpdate(
-            gymPostId,
-            { $set: { gymImg: gymImg } },
-            { returnDocument: 'after' }
-        );
-
-        if (!gymPost) {
-            return res.status(404).json({ message: 'Gym post not found' });
-        }
-
-        res.status(200).json({ message: 'Gym image updated successfully', gymPost });
-
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
-    }
+    await updateGymPostField(req, res, 'gymImg', 'Gym post image updated successfully');
 };
 
 // --- 12. Delete Gym Post --- //
-
 exports.deleteGymPost = async (req, res) => {
     try {
         const { gymPostId } = req.params;
 
-        // Delete gym information from database
-        let gymPost = await GymPost.findByIdAndDelete(gymPostId);
-
-        if (!gymPost) {
+        const postRef = db.collection('gymPosts').doc(gymPostId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
             return res.status(404).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym post deleted successfully' });
+        await postRef.delete();
 
+        res.status(200).json({ message: 'Gym post deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
-
 };
 
-
-// --- 13. Get Gym Post Details by GymPost ID--- //
-
+// --- 13. Get Gym Post Details by GymPost ID --- //
 exports.getGymPostByGymPostId = async (req, res) => {
     try {
         const { gymPostId } = req.params;
 
-        // Get gym post details from database
-        let gymPost = await GymPost.findById(gymPostId);
-
-        if (!gymPost) {
+        const postDoc = await db.collection('gymPosts').doc(gymPostId).get();
+        if (!postDoc.exists) {
             return res.status(404).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ gymPost });
-
+        res.status(200).json({
+            gymPost: { _id: gymPostId, ...postDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
 // --- 14. Get Gym Post by Gym ID --- //
-
 exports.getGymPostByGymId = async (req, res) => {
     try {
         const { gymId } = req.params;
 
-        // Get gym post details from database
-        let gymPost = await GymPost.findOne({ gymId }).populate('gymId', 'GymName Address');
-
-        if (!gymPost) {
+        const postsQuery = await db.collection('gymPosts').where('gymId', '==', gymId).get();
+        if (postsQuery.empty) {
             return res.status(404).json({ message: 'No gym post found' });
         }
 
-        res.status(200).json({ gymPost });
+        const postDoc = postsQuery.docs[0];
+        const gymDoc = await db.collection('users').doc(gymId).get();
+        const gymData = gymDoc.exists ? gymDoc.data() : null;
 
+        res.status(200).json({
+            gymPost: {
+                _id: postDoc.id,
+                ...postDoc.data(),
+                gymId: gymData ? { _id: gymId, GymName: gymData.GymName, Address: gymData.GymAddress } : null
+            }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 15. Get All Gym Posts --- //
-
 exports.getAllGymPosts = async (req, res) => {
     try {
-        const approvedgyms = await Gym.find({ Approve: true });
-        const gymPosts = await GymPost.find({ gymId: { $in: approvedgyms.map(gym => gym._id) } }).populate('gymId', 'GymName Address');
+        const gymsSnap = await db.collection('users').where('Role', '==', 'Gym').where('Approve', '==', true).get();
+        const approvedGymsMap = {};
+        gymsSnap.forEach(doc => {
+            approvedGymsMap[doc.id] = doc.data();
+        });
 
-        if (!gymPosts || gymPosts.length === 0) {
+        const postsSnap = await db.collection('gymPosts').get();
+        const gymPosts = [];
+        
+        postsSnap.forEach(doc => {
+            const data = doc.data();
+            if (approvedGymsMap[data.gymId]) {
+                const gymData = approvedGymsMap[data.gymId];
+                gymPosts.push({
+                    _id: doc.id,
+                    ...data,
+                    gymId: { _id: data.gymId, GymName: gymData.GymName, Address: gymData.GymAddress }
+                });
+            }
+        });
+
+        if (gymPosts.length === 0) {
             return res.status(404).json({ message: 'No gym post found' });
         }
 
         res.status(200).json({ gymPosts });
-
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

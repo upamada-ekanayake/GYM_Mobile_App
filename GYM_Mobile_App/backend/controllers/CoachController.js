@@ -1,313 +1,299 @@
-const User = require('../models/User');
-const Admin = require('../models/Admin');
-const Gym = require('../models/Gym');
-const Coach = require('../models/Coach');
-const Coachpost = require('../models/CoachPost');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const { auth, db } = require('../config/firebase');
+const axios = require('axios');
+require('dotenv').config();
+
+// Helper to verify current password using Google Identity Toolkit API
+const verifyPassword = async (email, password) => {
+    try {
+        await axios.post(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+            { email, password, returnSecureToken: true }
+        );
+        return true;
+    } catch (error) {
+        return false;
+    }
+};
 
 // --- 01. Coach Registration --- //
-
 exports.Coach_Registration = async (req, res) => {
     try {
         const { CoachName, CoachAge, CoachNIC, CoachID, CoachContactNumber, Email, Password, ConfirmPassword, CoachDP } = req.body;
 
-        // Check if Coach NIC is already registered
-        let coach = await Coach.findOne({ CoachNIC });
-        if (coach) {
-            return res.status(400).json({ message: 'Coach NIC already registered' });
+        // Validation
+        if (!CoachName || !CoachAge || !CoachNIC || !CoachID || !CoachContactNumber || !Email || !Password || !ConfirmPassword) {
+            return res.status(400).json({ message: 'All fields are required' });
         }
-
-        // Check if Coach ID is already registered
-        let coachid = await Coach.findOne({ CoachID });
-        if (coachid) {
-            return res.status(400).json({ message: 'Coach ID already registered' });
-        }
-
-        // Check Contact number has 10 degites 
         if (CoachContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
         }
-
-        // Check if the email is already registered 
-        let useremail = await User.findOne({ Email });
-        let adminemail = await Admin.findOne({ Email });
-        let gymemail = await Gym.findOne({ Email });
-        let coachemail = await Coach.findOne({ Email });
-
-        if (useremail || adminemail || gymemail || coachemail) {
-            return res.status(400).json({ message: 'Email already registered' });
+        if (Password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters long' });
         }
-
-        // Check password length
-        if (Password.length < 6 || ConfirmPassword.length < 6) {
-            return res.status(400).json({ message: 'Entered password must be at least 6 characters long' });
-        }
-
-        // Check if the passwords are same
         if (Password !== ConfirmPassword) {
             return res.status(400).json({ message: 'Passwords are not same' });
         }
 
-        // Password hashing
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(Password, salt);
+        // Check if Coach ID is already taken
+        const checkID = await db.collection('users').where('CoachID', '==', CoachID).get();
+        if (!checkID.empty) {
+            return res.status(400).json({ message: 'Coach ID already registered' });
+        }
 
-        // Save new coach 
-        const newCoach = new Coach({ CoachName, CoachAge, CoachNIC, CoachID, CoachContactNumber, Email, Password: hashedPassword, CoachDP, Role: 'Coach', Approve: false })
-        await newCoach.save();
+        // Check if Email already registered in Firestore
+        const checkEmail = await db.collection('users').where('Email', '==', Email).get();
+        if (!checkEmail.empty) {
+            return res.status(400).json({ message: 'Email already registered' });
+        }
 
-        const coachObj = newCoach.toObject();
-        delete coachObj.Password;
+        // Create Firebase Auth user
+        const userRecord = await auth.createUser({
+            email: Email,
+            password: Password,
+            displayName: CoachName
+        });
 
-        res.status(201).json({ message: 'Coach registered successfully', newCoach: coachObj });
+        // Save metadata in users collection
+        const coachData = {
+            CoachName,
+            CoachAge: Number(CoachAge),
+            CoachNIC,
+            CoachID,
+            CoachContactNumber,
+            Email,
+            CoachDP: CoachDP || null,
+            Role: 'Coach',
+            Approve: false
+        };
+
+        await db.collection('users').doc(userRecord.uid).set(coachData);
+
+        res.status(201).json({
+            message: 'Coach registered successfully',
+            newCoach: { _id: userRecord.uid, ...coachData }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 02. Coach Login --- //
-
 exports.Coach_Login = async (req, res) => {
     try {
         const { Email, Password } = req.body;
 
-        // Check if coach is exist or not 
-        let coach = await Coach.findOne({ Email });
-        if (!coach) {
-            return res.status(400).json({ message: 'Invalid email' });
+        if (!Email || !Password) {
+            return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        // Check if password is correct
-        let isMatch = await bcrypt.compare(Password, coach.Password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid password' });
+        // Verify with Identity Toolkit
+        let authData;
+        try {
+            const authRes = await axios.post(
+                `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_WEB_API_KEY}`,
+                { email: Email, password: Password, returnSecureToken: true }
+            );
+            authData = authRes.data;
+        } catch (authError) {
+            return res.status(400).json({ message: 'Invalid email or password' });
         }
 
-        const token = jwt.sign(
-            { userId: coach._id, role: coach.Role, email: coach.Email },
-            process.env.JWT_SECRET || 'fallback_secret',
-            { expiresIn: '7d' }
-        );
+        const uid = authData.localId;
+        const token = authData.idToken;
 
-        const coachObj = coach.toObject();
-        delete coachObj.Password;
+        // Fetch Firestore profile
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: 'Profile not found in database' });
+        }
 
-        res.status(200).json({ message: 'Login successfully', coach: coachObj, token });
+        const coachData = userDoc.data();
+
+        res.status(200).json({
+            message: 'Login successfully',
+            coach: { _id: uid, ...coachData },
+            token
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 03. Update Contact Number --- //
-
 exports.Coach_UpdateContactNumber = async (req, res) => {
     try {
         const { coachId } = req.params;
         const { newContactNumber } = req.body;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId);
-        if (!coach) {
+        if (!newContactNumber || newContactNumber.length !== 10) {
+            return res.status(400).json({ message: 'Contact number must be 10 digits' });
+        }
+
+        const coachRef = db.collection('users').doc(coachId);
+        const coachDoc = await coachRef.get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        // Check Contact number has 10 degites
-        if (newContactNumber.length !== 10) {
-            return res.status(400).json({ message: 'Contact number must be 10 degites' });
-        }
+        await coachRef.update({ CoachContactNumber: newContactNumber });
+        const updatedDoc = await coachRef.get();
 
-        // Update contactnumber 
-        let update_coach = await Coach.findByIdAndUpdate(
-            coachId,
-            { $set: { CoachContactNumber: newContactNumber } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_coach) {
-            return res.status(404).json({ message: 'Failed to update contact number' });
-        }
-
-        res.status(200).json({ message: 'Contact number updated successfully', update_coach });
+        res.status(200).json({
+            message: 'Contact number updated successfully',
+            update_coach: { _id: coachId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 04. Update Password --- //
-
 exports.Coach_UpdatePassword = async (req, res) => {
     try {
         const { coachId } = req.params;
-        const { oldPassword, newPassword, ConfirmNewPassword } = req.body;
+        const { oldPassword, newPassword, confirmNewPassword } = req.body;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId);
-        if (!coach) {
+        const coachRef = db.collection('users').doc(coachId);
+        const coachDoc = await coachRef.get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        // Check if the old password is correct
-        let isMatch = await bcrypt.compare(oldPassword, coach.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid old password' });
+        // Verify old password
+        const email = coachDoc.data().Email;
+        const isCorrect = await verifyPassword(email, oldPassword);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid old password' });
         }
 
-        // Check password length 
-        if (newPassword.length < 6 || ConfirmNewPassword.length < 6) {
-            return res.status(404).json({ message: 'Entered new passwords must be at least 6 characters long' });
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+        }
+        if (newPassword !== confirmNewPassword) {
+            return res.status(400).json({ message: 'New passwords are not same' });
         }
 
-        // Check if the new passwords are same 
-        if (newPassword !== ConfirmNewPassword) {
-            return res.status(404).json({ message: 'New passwords are not same' });
-        }
+        // Update password in Firebase Auth
+        await auth.updateUser(coachId, { password: newPassword });
 
-        // Hash new password 
-        let salt = await bcrypt.genSalt(10);
-        let hashedPassword = await bcrypt.hash(newPassword, salt);
-
-        // Update password
-        let update_password = await Coach.findByIdAndUpdate(
-            coachId,
-            { $set: { Password: hashedPassword } },
-            { returnDocument: 'after' }
-        );
-
-        if (!update_password) {
-            return res.status(404).json({ message: 'Failed to update password' });
-        }
-
-        res.status(200).json({ message: 'Password updated successfully', update_password });
+        res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 05. Update Coach DP --- //
-
 exports.Coach_UpdateDP = async (req, res) => {
     try {
         const { coachId } = req.params;
         const { CoachDP } = req.body;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId);
-        if (!coach) {
+        const coachRef = db.collection('users').doc(coachId);
+        const coachDoc = await coachRef.get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        // Update coach DP
-        let update_dp = await Coach.findByIdAndUpdate(
-            coachId,
-            { $set: { CoachDP: CoachDP } },
-            { returnDocument: 'after' }
-        );
+        await coachRef.update({ CoachDP: CoachDP || null });
+        const updatedDoc = await coachRef.get();
 
-        if (!update_dp) {
-            return res.status(404).json({ message: 'Failed to update coach DP' });
-        }
-
-        res.status(200).json({ message: 'Coach DP updated successfully', update_dp });
+        res.status(200).json({
+            message: 'Coach DP updated successfully',
+            update_coach: { _id: coachId, ...updatedDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
 // --- 06. Get Coach Role --- //
-
 exports.Coach_Role = async (req, res) => {
     try {
         const { Email } = req.body;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findOne({ Email });
-        if (!coach) {
+        const checkEmail = await db.collection('users').where('Email', '==', Email).get();
+        if (checkEmail.empty) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        res.status(200).json({ role: coach.Role });
+        const coachDoc = checkEmail.docs[0];
+        res.status(200).json({ role: coachDoc.data().Role });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 07. Get Coach Details -- // 
-
+// --- 07. Get Coach Details --- //
 exports.Coach_Details = async (req, res) => {
     try {
         const { coachId } = req.params;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId).select('-Password');
-        if (!coach) {
+        const coachDoc = await db.collection('users').doc(coachId).get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        res.status(200).json({ coach });
+        res.status(200).json({
+            coach: { _id: coachId, ...coachDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-
-// --- 08. Delete Coach -- //
-
+// --- 08. Delete Coach --- //
 exports.Coach_Delete = async (req, res) => {
     try {
         const { coachId } = req.params;
         const { Password } = req.body;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId);
-        if (!coach) {
+        const coachRef = db.collection('users').doc(coachId);
+        const coachDoc = await coachRef.get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
         // Verify password
-        let isMatch = await bcrypt.compare(Password, coach.Password);
-        if (!isMatch) {
-            return res.status(404).json({ message: 'Invalid password' });
+        const email = coachDoc.data().Email;
+        const isCorrect = await verifyPassword(email, Password);
+        if (!isCorrect) {
+            return res.status(400).json({ message: 'Invalid password' });
         }
 
-        // delete coach post if have function
-        let deleteCoachPost = await Coachpost.findOne({ coachId: coachId });
+        // Delete coach's posts in batch from coachPosts
+        const postsQuery = await db.collection('coachPosts').where('coachId', '==', coachId).get();
+        const batch = db.batch();
+        postsQuery.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
 
-        if (deleteCoachPost) {
-            await Coachpost.findByIdAndDelete(deleteCoachPost._id);
-        }
+        // Delete from Firebase Auth
+        await auth.deleteUser(coachId);
 
-        // Delete coach
-        let delete_coach = await Coach.findByIdAndDelete(coachId);
-        if (!delete_coach) {
-            return res.status(404).json({ message: 'Failed to delete coach' });
-        }
+        // Delete from Firestore
+        await coachRef.delete();
 
-        res.status(200).json({ message: 'Coach deleted successfully', delete_coach });
+        res.status(200).json({
+            message: 'Coach deleted successfully',
+            delete_coach: { _id: coachId, ...coachDoc.data() }
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
 // --- 09. Get Coach Approval Status --- //
-
 exports.Coach_GetCoachApprovalStatus = async (req, res) => {
     try {
         const { coachId } = req.params;
 
-        // Check if coach is exist or not
-        let coach = await Coach.findById(coachId);
-        if (!coach) {
+        const coachDoc = await db.collection('users').doc(coachId).get();
+        if (!coachDoc.exists) {
             return res.status(404).json({ message: 'Coach not found' });
         }
 
-        res.status(200).json({ approvalStatus: coach.Approve });
+        res.status(200).json({ approvalStatus: coachDoc.data().Approve });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
