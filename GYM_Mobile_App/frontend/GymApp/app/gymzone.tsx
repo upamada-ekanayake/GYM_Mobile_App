@@ -30,7 +30,7 @@ const TEXT_MUTED = '#555555';
 const SUCCESS_GREEN = '#22C55E';
 
 /* ── Backend Config ── */
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 export default function GymZoneScreen() {
   const router = useRouter();
@@ -141,7 +141,7 @@ export default function GymZoneScreen() {
                   <Text style={styles.locationText}>{item.city}</Text>
                 </View>
 
-                <Text style={styles.description}>{item.gymInfotmation}</Text>
+                <Text style={styles.description}>{item.gymInformation}</Text>
 
                 <View style={styles.infoGrid}>
                   <View style={styles.infoItem}>
@@ -158,13 +158,13 @@ export default function GymZoneScreen() {
                 </View>
 
                 {/* Facilities List as chips/tags */}
-                {item.gymFasilities && item.gymFasilities.length > 0 && (
+                {item.gymFacilities && item.gymFacilities.length > 0 && (
                   <>
                     <Text style={styles.sectionLabel}>Facilities</Text>
                     <View style={styles.tagsContainer}>
-                      {item.gymFasilities.map((fac: any) => (
+                      {item.gymFacilities.map((fac: any) => (
                         <View key={fac._id} style={styles.tagChip}>
-                          <Text style={styles.tagChipText}>{fac.fasility}</Text>
+                          <Text style={styles.tagChipText}>{fac.facility}</Text>
                         </View>
                       ))}
                     </View>

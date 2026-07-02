@@ -29,7 +29,7 @@ const TEXT_SECONDARY = '#AAAAAA';
 const TEXT_MUTED = '#555555';
 const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 interface Coach {
   _id: string;

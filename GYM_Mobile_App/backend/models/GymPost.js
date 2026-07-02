@@ -6,13 +6,13 @@ const gymInfoSchema = new mongoose.Schema({
         ref: 'Gym',
         required: true,
     },
-    gymInfotmation: {
+    gymInformation: {
         type: String,
         required: true,
     },
-    gymFasilities: [
+    gymFacilities: [
         {
-            fasility: {
+            facility: {
                 type: String,
                 required: true,
             }

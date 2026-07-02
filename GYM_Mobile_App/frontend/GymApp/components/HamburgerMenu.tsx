@@ -14,7 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Session } from '../constants/Session';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 interface HamburgerMenuProps {
   currentRole: 'User' | 'Gym' | 'Coach' | 'Admin';

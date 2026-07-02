@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/authMiddleware');
+router.use(authMiddleware);
 const SupplementPostController = require('../controllers/SupplementPostController');
 
 router.post('/supplement-post-create/:adminId', SupplementPostController.Supplement_Create);

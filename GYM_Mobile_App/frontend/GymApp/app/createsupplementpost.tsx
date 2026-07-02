@@ -35,7 +35,7 @@ const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
 
 /* ── Backend Config ── */
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 const CLOUDINARY_CLOUD_NAME = 'dcahmv4lj';
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 

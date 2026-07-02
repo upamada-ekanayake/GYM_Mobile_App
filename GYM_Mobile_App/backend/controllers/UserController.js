@@ -3,6 +3,7 @@ const Admin = require('../models/Admin');
 const Gym = require('../models/Gym');
 const Coach = require('../models/Coach');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // --- 01. User Registration --- //
 
@@ -49,7 +50,10 @@ exports.User_Registration = async (req, res) => {
         const newUser = new User({ UserName, UserAge, UserNIC, UserContactNumber, Email, Password: hashedPassword, UserDP, Role: 'User', Approve: true })
         await newUser.save();
 
-        res.status(201).json({ message: 'User registered successfully', newUser });
+        const userObj = newUser.toObject();
+        delete userObj.Password;
+
+        res.status(201).json({ message: 'User registered successfully', newUser: userObj });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -74,7 +78,16 @@ exports.User_Login = async (req, res) => {
             return res.status(400).json({ message: 'Invalid password' });
         }
 
-        res.status(200).json({ message: 'Login successfully', user });
+        const token = jwt.sign(
+            { userId: user._id, role: user.Role, email: user.Email },
+            process.env.JWT_SECRET || 'fallback_secret',
+            { expiresIn: '7d' }
+        );
+
+        const userObj = user.toObject();
+        delete userObj.Password;
+
+        res.status(200).json({ message: 'Login successfully', user: userObj, token });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

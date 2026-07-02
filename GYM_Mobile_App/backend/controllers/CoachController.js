@@ -4,6 +4,7 @@ const Gym = require('../models/Gym');
 const Coach = require('../models/Coach');
 const Coachpost = require('../models/CoachPost');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // --- 01. Coach Registration --- //
 
@@ -56,7 +57,10 @@ exports.Coach_Registration = async (req, res) => {
         const newCoach = new Coach({ CoachName, CoachAge, CoachNIC, CoachID, CoachContactNumber, Email, Password: hashedPassword, CoachDP, Role: 'Coach', Approve: false })
         await newCoach.save();
 
-        res.status(201).json({ message: 'Coach registered successfully', newCoach });
+        const coachObj = newCoach.toObject();
+        delete coachObj.Password;
+
+        res.status(201).json({ message: 'Coach registered successfully', newCoach: coachObj });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -81,7 +85,16 @@ exports.Coach_Login = async (req, res) => {
             return res.status(400).json({ message: 'Invalid password' });
         }
 
-        res.status(200).json({ message: 'Login successfully', coach });
+        const token = jwt.sign(
+            { userId: coach._id, role: coach.Role, email: coach.Email },
+            process.env.JWT_SECRET || 'fallback_secret',
+            { expiresIn: '7d' }
+        );
+
+        const coachObj = coach.toObject();
+        delete coachObj.Password;
+
+        res.status(200).json({ message: 'Login successfully', coach: coachObj, token });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

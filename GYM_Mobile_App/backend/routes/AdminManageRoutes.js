@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/authMiddleware');
+router.use(authMiddleware);
 const AdminManageController = require('../controllers/AdminManageController');
 
 router.get('/admin-manage-get-all-users-details', AdminManageController.AdminManage_GetAllUsersDetails);

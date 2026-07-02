@@ -7,7 +7,7 @@ const Gym = require('../models/Gym');
 exports.createGymPost = async (req, res) => {
     try {
         const { gymId } = req.params;
-        const { gymInfotmation, gymFasilities, openHours, closeHours, gymContactNumber, city, packages, gymImg } = req.body;
+        const { gymInformation, gymFacilities, openHours, closeHours, gymContactNumber, city, packages, gymImg } = req.body;
 
         // Check if the Gym ID is registered 
         let gym = await Gym.findById(gymId);
@@ -24,7 +24,7 @@ exports.createGymPost = async (req, res) => {
             return res.status(400).json({ message: 'Gym already create Information' });
         };
 
-        let gymPost = new GymPost({ gymId, gymInfotmation, gymFasilities, openHours, closeHours, city, gymContactNumber, packages, gymImg });
+        let gymPost = new GymPost({ gymId, gymInformation, gymFacilities, openHours, closeHours, city, gymContactNumber, packages, gymImg });
         await gymPost.save();
 
         res.status(201).json({ message: 'Gym Post created successfully', gymPost });
@@ -39,12 +39,12 @@ exports.createGymPost = async (req, res) => {
 exports.updateGymPostInformation = async (req, res) => {
     try {
         const { gymPostId } = req.params;
-        const { gymInfotmation } = req.body;
+        const { gymInformation } = req.body;
 
         // Update gym information in database
         let gymPost = await GymPost.findByIdAndUpdate(
             gymPostId,
-            { $set: { gymInfotmation: gymInfotmation } },
+            { $set: { gymInformation: gymInformation } },
             { returnDocument: 'after' }
         );
 
@@ -60,17 +60,17 @@ exports.updateGymPostInformation = async (req, res) => {
 };
 
 
-// --- 03. Add Gym Fasilities --- //
+// --- 03. Add Gym Facilities --- //
 
-exports.addGymFasilities = async (req, res) => {
+exports.addGymFacilities = async (req, res) => {
     try {
         const { gymPostId } = req.params;
-        const { fasility } = req.body;
+        const { facility } = req.body;
 
-        // Add fasility to gym info 
+        // Add facility to gym info 
         let gymPost = await GymPost.findByIdAndUpdate(
             gymPostId,
-            { $push: { gymFasilities: { fasility } } },
+            { $push: { gymFacilities: { facility } } },
             { returnDocument: 'after' }
         );
 
@@ -78,7 +78,7 @@ exports.addGymFasilities = async (req, res) => {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym fasility added successfully', gymPost });
+        res.status(200).json({ message: 'Gym facility added successfully', gymPost });
 
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
@@ -86,17 +86,17 @@ exports.addGymFasilities = async (req, res) => {
 };
 
 
-// --- 04. Delete Gym Fasilities --- //
+// --- 04. Delete Gym Facilities --- //
 
-exports.deleteGymFasilities = async (req, res) => {
+exports.deleteGymFacilities = async (req, res) => {
     try {
         const { gymPostId } = req.params;
-        const { fasilityId } = req.body;
+        const { facilityId } = req.body;
 
-        // Remove fasility from gym info
+        // Remove facility from gym info
         let gymPost = await GymPost.findByIdAndUpdate(
             gymPostId,
-            { $pull: { gymFasilities: { _id: fasilityId } } },
+            { $pull: { gymFacilities: { _id: facilityId } } },
             { returnDocument: 'after' }
         );
 
@@ -104,7 +104,7 @@ exports.deleteGymFasilities = async (req, res) => {
             return res.status(400).json({ message: 'Gym post not found' });
         }
 
-        res.status(200).json({ message: 'Gym fasility deleted successfully', gymPost });
+        res.status(200).json({ message: 'Gym facility deleted successfully', gymPost });
 
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });

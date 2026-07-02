@@ -1,8 +1,40 @@
 const axios = require('axios');
 
 // URL where the FastAPI server is running (currently running locally)
-const FASTAPI_BASE_URL = 'http://127.0.0.1:8000';
+const FASTAPI_BASE_URL = process.env.FASTAPI_BASE_URL || 'http://127.0.0.1:8000';
+const AXIOS_TIMEOUT = 5000; // 5 seconds timeout
 
+// Helper to handle FastAPI connection/response errors cleanly
+const handleAIError = (error, res) => {
+    const isConnectionError = error.code === 'ECONNREFUSED' || 
+                              error.code === 'ENOTFOUND' || 
+                              error.code === 'ECONNABORTED' ||
+                              error.message.includes('timeout');
+
+    if (isConnectionError) {
+        return res.status(503).json({
+            success: false,
+            message: 'The AI sub-module is temporarily offline or unreachable. Please try again later.',
+            code: 'AI_SERVICE_OFFLINE'
+        });
+    }
+
+    if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        return res.status(error.response.status).json({
+            success: false,
+            message: 'AI Server returned an error',
+            error: error.response.data
+        });
+    }
+
+    return res.status(500).json({
+        success: false,
+        message: 'Internal error communicating with the AI sub-module.',
+        error: error.message
+    });
+};
 
 // --- 01. Calories Burned Predict --- //
 
@@ -11,10 +43,10 @@ exports.predictCalories = async (req, res) => {
         // Get the raw data sent from the frontend through the request body
         const { Age, Gender, Weight, Height, Hours, mins, Workout_Type_HIIT, Workout_Type_Strength, Workout_Type_Yoga } = req.body;
 
-        let Session_Duration = Hours + (mins / 60)
-        let Height_m = Height / 100
+        let Session_Duration = Hours + (mins / 60);
+        let Height_m = Height / 100;
 
-        // Send the data to the FastAPI server
+        // Send the data to the FastAPI server with timeout
         const response = await axios.post(`${FASTAPI_BASE_URL}/predict/calories`, {
             Age: Number(Age),
             Gender: Number(Gender),
@@ -24,7 +56,7 @@ exports.predictCalories = async (req, res) => {
             Workout_Type_HIIT: Number(Workout_Type_HIIT),
             Workout_Type_Strength: Number(Workout_Type_Strength),
             Workout_Type_Yoga: Number(Workout_Type_Yoga)
-        });
+        }, { timeout: AXIOS_TIMEOUT });
 
         // Return the final output from FastAPI to the frontend
         return res.status(200).json({
@@ -34,11 +66,7 @@ exports.predictCalories = async (req, res) => {
         });
 
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error connecting to AI Server',
-            error: error.message
-        });
+        return handleAIError(error, res);
     }
 };
 
@@ -49,7 +77,7 @@ exports.predictWaterIntake = async (req, res) => {
         // Extract the correct new features from req.body
         const { Age, Weight, Physical_Activity_Level, Gender_Male, Weather_Hot, Weather_Normal } = req.body;
 
-        // Send the updated data format to FastAPI
+        // Send the updated data format to FastAPI with timeout
         const response = await axios.post(`${FASTAPI_BASE_URL}/predict/water`, {
             Age: Number(Age),
             Weight: Number(Weight),
@@ -57,7 +85,7 @@ exports.predictWaterIntake = async (req, res) => {
             Gender_Male: Number(Gender_Male),
             Weather_Hot: Number(Weather_Hot),
             Weather_Normal: Number(Weather_Normal)
-        });
+        }, { timeout: AXIOS_TIMEOUT });
 
         return res.status(200).json({
             success: true,
@@ -66,10 +94,6 @@ exports.predictWaterIntake = async (req, res) => {
         });
 
     } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error connecting to AI Server',
-            error: error.message
-        });
+        return handleAIError(error, res);
     }
 };

@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/authMiddleware');
+router.use(authMiddleware);
 const WorkoutsController = require('../controllers/WorkoutsController');
 
 router.put('/user-workout-create/:userId', WorkoutsController.User_Workout_Create);

@@ -30,7 +30,7 @@ const TEXT_MUTED = '#555555';
 const SUCCESS_GREEN = '#22C55E';
 
 /* ── Backend Config ── */
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 export default function CoachesScreen() {
   const router = useRouter();

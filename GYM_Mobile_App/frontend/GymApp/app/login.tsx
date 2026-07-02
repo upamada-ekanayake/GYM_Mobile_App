@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Session } from '../constants/Session';
 
 /* ── Backend Config ── */
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 const ERROR_RED = '#EF4444';
 
 export default function LoginScreen() {
@@ -135,6 +135,10 @@ export default function LoginScreen() {
 
       if (successResult) {
         const ep = successResult.endpoint;
+        const token = successResult.data?.token;
+        if (token) {
+          Session.setToken(token);
+        }
 
         try {
           const roleRes = await fetch(ep.roleUrl, {

@@ -27,7 +27,7 @@ const TEXT_SECONDARY = '#B3AEC6';
 const TEXT_MUTED = '#5C5570';
 const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
 export default function WaterTrackerScreen() {
   const { role } = useLocalSearchParams();

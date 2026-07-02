@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/authMiddleware');
+router.use(authMiddleware);
 const GymPostController = require('../controllers/GymPostController');
 
 router.post('/gym-post-create/:gymId', GymPostController.createGymPost);
 router.patch('/gym-post-information-update/:gymPostId', GymPostController.updateGymPostInformation);
-router.patch('/gym-post-fasilities-add/:gymPostId', GymPostController.addGymFasilities);
-router.delete('/gym-post-fasilities-delete/:gymPostId', GymPostController.deleteGymFasilities);
+router.patch('/gym-post-facilities-add/:gymPostId', GymPostController.addGymFacilities);
+router.delete('/gym-post-facilities-delete/:gymPostId', GymPostController.deleteGymFacilities);
 router.patch('/gym-post-open-hours-update/:gymPostId', GymPostController.updateOpenHours);
 router.patch('/gym-post-close-hours-update/:gymPostId', GymPostController.updateCloseHours);
 router.patch('/gym-post-contact-number-update/:gymPostId', GymPostController.updateGymPostContactNumber);

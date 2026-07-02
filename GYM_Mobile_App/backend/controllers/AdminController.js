@@ -3,6 +3,7 @@ const Admin = require('../models/Admin');
 const Gym = require('../models/Gym');
 const Coach = require('../models/Coach');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // --- 01. Admin Registration --- //
 
@@ -49,7 +50,10 @@ exports.Admin_Registration = async (req, res) => {
         const newAdmin = new Admin({ AdminName, AdminAge, AdminNIC, AdminContactNumber, Email, Password: hashedPassword, AdminDP, Role: 'Admin', Approve: false })
         await newAdmin.save();
 
-        res.status(201).json({ message: 'Admin registered successfully', newAdmin });
+        const adminObj = newAdmin.toObject();
+        delete adminObj.Password;
+
+        res.status(201).json({ message: 'Admin registered successfully', newAdmin: adminObj });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -79,7 +83,16 @@ exports.Admin_Login = async (req, res) => {
             return res.status(400).json({ message: 'Admin is not approved yet' });
         }
 
-        res.status(200).json({ message: 'Login successfully', admin });
+        const token = jwt.sign(
+            { userId: admin._id, role: admin.Role, email: admin.Email },
+            process.env.JWT_SECRET || 'fallback_secret',
+            { expiresIn: '7d' }
+        );
+
+        const adminObj = admin.toObject();
+        delete adminObj.Password;
+
+        res.status(200).json({ message: 'Login successfully', admin: adminObj, token });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }

@@ -36,7 +36,7 @@ const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
 
 /* ── Backend Config ── */
-const BACKEND_URL = 'http://192.168.1.5:5000';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 const CLOUDINARY_CLOUD_NAME = 'dcahmv4lj';
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
@@ -295,7 +295,7 @@ export default function CreateGymPostScreen() {
 
   /* ── Dynamic Form Handlers (Edit Mode) ── */
   const handleAddEditFacility = () => {
-    setEditFacilities([...editFacilities, { fasility: '' }]);
+    setEditFacilities([...editFacilities, { facility: '' }]);
   };
 
   const handleRemoveEditFacility = (index: number) => {
@@ -305,7 +305,7 @@ export default function CreateGymPostScreen() {
 
   const handleEditFacilityChange = (index: number, value: string) => {
     const updated = [...editFacilities];
-    updated[index].fasility = value;
+    updated[index].facility = value;
     setEditFacilities(updated);
   };
 
@@ -398,7 +398,7 @@ export default function CreateGymPostScreen() {
       return false;
     }
 
-    const validFacs = facs.filter(f => typeof f === 'string' ? f.trim() : f.fasility?.trim());
+    const validFacs = facs.filter(f => typeof f === 'string' ? f.trim() : f.facility?.trim());
     if (validFacs.length === 0) {
       showPopup('Validation Error', 'Please add at least one facility.', 'error');
       return false;
@@ -468,9 +468,9 @@ export default function CreateGymPostScreen() {
     }));
 
     const body = {
-      gymInfotmation: gymInformation.trim(), // Database
+      gymInformation: gymInformation.trim(), // Database
       gymInformation: gymInformation.trim(), // Prompt
-      gymFasilities: cleanedFacs.map(f => ({ fasility: f.trim() })), // Database
+      gymFacilities: cleanedFacs.map(f => ({ facility: f.trim() })), // Database
       gymFacilities: cleanedFacs.map(f => ({ facility: f.trim() })), // Prompt
       openHours: openH,
       closeHours: closeH,
@@ -512,7 +512,7 @@ export default function CreateGymPostScreen() {
   const openEditModal = () => {
     if (!gymPost) return;
     setEditGymImg(gymPost.gymImg || '');
-    setEditGymInformation(gymPost.gymInfotmation || '');
+    setEditGymInformation(gymPost.gymInformation || '');
     setEditCity(gymPost.city || '');
 
     const [oh, om] = (gymPost.openHours || '08:00').split(':');
@@ -525,7 +525,7 @@ export default function CreateGymPostScreen() {
 
     setEditGymContactNumber(gymPost.gymContactNumber || '');
     setEditFacilities(
-      gymPost.gymFasilities ? gymPost.gymFasilities.map((f: any) => ({ _id: f._id, fasility: f.fasility })) : []
+      gymPost.gymFacilities ? gymPost.gymFacilities.map((f: any) => ({ _id: f._id, facility: f.facility })) : []
     );
     setEditPackages(
       gymPost.packages
@@ -592,12 +592,12 @@ export default function CreateGymPostScreen() {
     }
 
     // 3. Description
-    if (editGymInformation !== gymPost.gymInfotmation) {
+    if (editGymInformation !== gymPost.gymInformation) {
       fetchThunks.push(() =>
         fetch(`${BACKEND_URL}/api/gym-posts/gym-post-information-update/${gymPostId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ gymInfotmation: editGymInformation }),
+          body: JSON.stringify({ gymInformation: editGymInformation }),
         })
       );
     }
@@ -638,33 +638,33 @@ export default function CreateGymPostScreen() {
     }
 
     // 7. Facilities Difference
-    const origFacs = gymPost.gymFasilities || [];
+    const origFacs = gymPost.gymFacilities || [];
     const facsToDelete = origFacs.filter((orig: any) => {
       const match = editFacilities.find((ed: any) => ed._id === orig._id);
-      return !match || match.fasility !== orig.fasility;
+      return !match || match.facility !== orig.facility;
     });
     const facsToAdd = editFacilities.filter((ed: any) => {
       if (!ed._id) return true;
       const match = origFacs.find((orig: any) => orig._id === ed._id);
-      return match && match.fasility !== ed.fasility;
+      return match && match.facility !== ed.facility;
     });
 
     facsToDelete.forEach((f: any) => {
       fetchThunks.push(() =>
-        fetch(`${BACKEND_URL}/api/gym-posts/gym-post-fasilities-delete/${gymPostId}`, {
+        fetch(`${BACKEND_URL}/api/gym-posts/gym-post-facilities-delete/${gymPostId}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fasilityId: f._id }),
+          body: JSON.stringify({ facilityId: f._id }),
         })
       );
     });
 
     facsToAdd.forEach((f: any) => {
       fetchThunks.push(() =>
-        fetch(`${BACKEND_URL}/api/gym-posts/gym-post-fasilities-add/${gymPostId}`, {
+        fetch(`${BACKEND_URL}/api/gym-posts/gym-post-facilities-add/${gymPostId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fasility: f.fasility.trim() }),
+          body: JSON.stringify({ facility: f.facility.trim() }),
         })
       );
     });
@@ -829,7 +829,7 @@ export default function CreateGymPostScreen() {
                 <Text style={styles.postLocationText}>{gymPost.city}</Text>
               </View>
 
-              <Text style={styles.postDescription}>{gymPost.gymInfotmation}</Text>
+              <Text style={styles.postDescription}>{gymPost.gymInformation}</Text>
 
               <View style={styles.postInfoGrid}>
                 <View style={styles.postInfoItem}>
@@ -848,10 +848,10 @@ export default function CreateGymPostScreen() {
               {/* Facilities Chips */}
               <Text style={styles.sectionTitle}>Facilities</Text>
               <View style={styles.tagsContainer}>
-                {gymPost.gymFasilities && gymPost.gymFasilities.length > 0 ? (
-                  gymPost.gymFasilities.map((item: any) => (
+                {gymPost.gymFacilities && gymPost.gymFacilities.length > 0 ? (
+                  gymPost.gymFacilities.map((item: any) => (
                     <View key={item._id} style={styles.tagChip}>
-                      <Text style={styles.tagChipText}>{item.fasility}</Text>
+                      <Text style={styles.tagChipText}>{item.facility}</Text>
                     </View>
                   ))
                 ) : (
@@ -1339,7 +1339,7 @@ export default function CreateGymPostScreen() {
                         style={styles.input}
                         placeholder="Facility"
                         placeholderTextColor={TEXT_MUTED}
-                        value={f.fasility}
+                        value={f.facility}
                         onChangeText={val => handleEditFacilityChange(idx, val)}
                       />
                     </View>
