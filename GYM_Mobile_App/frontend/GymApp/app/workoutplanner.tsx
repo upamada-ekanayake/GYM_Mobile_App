@@ -446,6 +446,7 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     width: '100%',
+    maxWidth: 600,
     backgroundColor: CARD,
     borderRadius: 24,
     borderWidth: 1.5,
@@ -546,6 +547,7 @@ const styles = StyleSheet.create({
   },
   resultsCard: {
     width: '100%',
+    maxWidth: 600,
     backgroundColor: CARD,
     borderRadius: 24,
     borderWidth: 1.5,

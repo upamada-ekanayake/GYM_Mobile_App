@@ -48,6 +48,7 @@ export default function LoginScreen() {
   };
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       () => setKeyboardOpen(true)
@@ -409,6 +410,7 @@ const styles = StyleSheet.create({
   /* ── Inputs ── */
   inputContainer: {
     width: '100%',
+    maxWidth: 400,
     gap: 16,
     marginBottom: 28,
     alignItems: 'center',
@@ -491,6 +493,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
+    maxWidth: 380,
     backgroundColor: 'rgba(18, 18, 26, 0.95)',
     borderRadius: 24,
     borderWidth: 1.5,

@@ -1,67 +1,39 @@
-# 🏋️‍♂️ Flexo - AI-Powered Personalized Fitness and Gym Management Platform
+# ⚡ AuraFit - Premium AI-Powered Fitness Ecosystem
 
-## 📌 Project Overview
-
-**Flexo** is an AI-powered mobile application designed to connect fitness enthusiasts, gyms, coaches, and administrators through a single platform.
-
-The application allows:
-
-**👤 Users**
-* Register and manage their fitness journey.
-* Create and manage workout plans.
-* Predict burned calories using AI.
-* Predict daily water intake using AI.
-* Find suitable gyms.
-* Contact and connect with coaches.
-* Purchase supplements directly through the app.
-
-**🏢 Gyms**
-* Register their gym.
-* Create promotional posts.
-* Increase visibility and attract more customers.
-
-**💪 Coaches**
-* Register as fitness coaches.
-* Create promotional posts.
-* Promote their training services.
-
-**👨‍💼 Admins**
-* Manage all users, gyms, coaches, and admins.
-* Manage supplements.
-* Generate revenue by selling supplements through the platform.
+**AuraFit** is a state-of-the-art, premium fitness platform featuring deep-learning image analysis, intelligent predictive workout plan generation, real-time analytics dashboards, and unified gym/coach/admin management capabilities. AuraFit is designed with a premium, high-contrast dark theme (Obsidian Dark background, Aura Violet and Neon Emerald accent colors) to deliver a world-class visual experience across mobile platforms and desktop web browsers.
 
 ---
 
-## 🎯 Why This Application Was Developed
+## 🏗️ Architectural Layout Breakdown
 
-Many people face difficulties when trying to find:
+AuraFit is built upon a modern, distributed microservice and serverless architecture:
 
-* A suitable gym.
-* A professional fitness coach.
-* Reliable fitness services in one place.
+```mermaid
+graph TD
+    A[React Native / Expo Client] -->|HTTP Requests / Auth ID Token| B[Node.js / Express API Gateway]
+    A -->|Static Assets / Direct Queries| C[Google Identity Toolkit / Firebase]
+    B -->|Verify Token / Fetch Documents| C[Cloud Firestore & Firebase Auth]
+    B -->|Proxy AI Inference Requests| D[FastAPI AI Microservices]
+    D -->|Evaluate Features| E[PyTorch & Joblib Engines]
+```
 
-At the same time:
+### 1. Frontend Client
+* **Core Stack**: React Native, Expo SDK 54, React Native Web, TypeScript.
+* **UI/UX Aesthetics**: Cohesive design system built around Obsidian Black (`#08080C`), Deep Charcoal (`#12121A`), Aura Violet (`#8A2BE2`), and Neon Emerald (`#00FF87`).
+* **Cross-Platform Compatibility**: Fully audited layout wrappers featuring viewport constraints (`maxWidth`) and custom, native-independent SVG/Style bar charts that render beautifully on both iOS, Android, and desktop web browsers.
 
-* Gyms mainly use traditional marketing methods such as banners and posters.
-* Coaches have limited opportunities to promote their training services online.
-* Users often have to use multiple platforms to manage their fitness activities.
+### 2. Node.js API Gateway (Backend)
+* **Core Stack**: Node.js, Express.js.
+* **Authentication**: Decodes and verifies incoming Firebase ID tokens using the `firebase-admin` Server SDK.
+* **Database Layer**: Migrated entirely from MongoDB/Mongoose to **Cloud Firestore** and **Firebase Authentication** for instant sync, real-time queries, and serverless user lifecycle management.
+* **Resiliency**: Built-in credential fallback validation that launches mock DB wrappers in local development if live Firebase certs are not supplied.
 
----
-
-## 💡 Our Solution
-
-Flexo provides a complete fitness ecosystem in a single mobile application.
-
-With Flexo:
-
-* ✅ Users can discover gyms and coaches easily.
-* ✅ Users can manage workouts efficiently.
-* ✅ AI predicts burned calories based on workout information.
-* ✅ AI predicts daily water intake requirements.
-* ✅ Gyms can promote their services through posts.
-* ✅ Coaches can advertise their training services.
-* ✅ Supplements can be purchased directly from the application.
-* ✅ Admins can manage the entire platform from one place.
+### 3. AI Microservice Engine
+* **Core Stack**: Python 3.10, FastAPI, Uvicorn.
+* **Models**:
+  * **Food Scanner**: Computer Vision pipeline utilizing a pre-trained **PyTorch MobileNetV3_Large** backbone for transfer learning on food image classifications (Food-101) with serving-to-calorie mapping.
+  * **Workout Planner**: Inference engine using a trained **Random Forest/Gradient Boosted** classification pipeline (`joblib`) evaluating age, BMI, sex, goals, and conditions.
+  * **Water/Calorie Intake**: Tabular regression predictors estimating daily requirements based on active levels.
 
 ---
 
@@ -71,184 +43,128 @@ With Flexo:
 GYM_Mobile_App/
 │
 ├── AI_Models/                 
-│   ├── AI_Models_Code/
-│   ├── datasets/
-│   ├── notebooks/
-│   ├── saved_models/         
-│   ├── venv/              
-│   └── requirements.txt 
+│   ├── AI_Models_Code/         # FastAPI, main.py, model inference scripts
+│   │   ├── AI_03_Food_Scanner_Model.py
+│   │   └── AI_04_Workout_Planner_Model.py
+│   ├── datasets/               # ML dataset directories
+│   ├── notebooks/              # Google Colab training notebooks
+│   └── requirements.txt        # Python pip dependencies
 │
 └── GYM_Mobile_App/            
-    ├── backend/               
-    └── frontend/GymApp    
-```
----
-
-## 🤖 Integrated AI Models
-
-Flexo leverages state-of-the-art Supervised Machine Learning models to give personalized predictions to its users:
-
-1️⃣ Calories Burned Prediction Model
-* Purpose: Predicts the total number of calories burned during any given workout session.
-* Dataset Type: Tabular Dataset
-* Algorithm: Linear Regression
-* Pipeline: Data Collection → Preprocessing → Model Training → Evaluation → Deployment via FastAPI.
-
-2️⃣ Daily Water Intake Prediction Model
-* Purpose: Recommends the optimal daily water intake requirements based on individual user metrics.
-* Dataset Type: Tabular Dataset
-* Algorithm: Random Forest Regression
-* Pipeline: Data Collection → Preprocessing → Model Training → Evaluation → Deployment via FastAPI.
-
----
-
-## 📊 Dataset & Trained Model Weights
-Due to file sizing and performance optimizations, the datasets and trained model assets are hosted externally on Hugging Face:
-
-* **📦 Download Dataset:** [Hugging Face Dataset Link](https://huggingface.co/datasets/Manuka0329/GymApp-DataSet)
-* **🧠 Download Trained Models:** [Hugging Face Models Link](https://huggingface.co/Manuka0329/GymApp-AI-Models)
-
----
-
-## 🚀 Getting Started & Installation Guide
-Follow these sequential steps to set up the entire Flexo ecosystem locally:
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/ManukaAbeysekara2004/GYM_Mobile_App
+    ├── backend/                # Node.js Express source code, routes, controllers
+    │   ├── config/firebase.js  # Firebase Admin initialization
+    │   ├── middleware/         # authMiddleware token parser
+    │   └── server.js           # Server entrance point
+    └── frontend/GymApp         # React Native Expo project
+        ├── app/                # Expo Router screen pages
+        └── assets/             # Brand logos, icons, and splash assets
 ```
 
-### 2. Setup the AI Virtual Environment
-Navigate to the AI directory and initialize a virtual environment using Python 3.10:
+---
+
+## ⚙️ Environment Variable Configurations
+
+AuraFit requires environment variables configured in both the gateway and the client folders to enable communications.
+
+### 1. API Gateway Configurations (`GYM_Mobile_App/backend/.env`)
+Create a file named `.env` inside `GYM_Mobile_App/backend/` and supply these variables:
+
+```ini
+PORT=5000
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-firebase-project-id.iam.gserviceaccount.com
+# Private key must contain newlines formatted properly inside double quotes
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3...\n-----END PRIVATE KEY-----\n"
+FIREBASE_WEB_API_KEY=your-firebase-web-api-key-for-password-verification
+```
+
+### 2. Frontend Client Configurations (`GYM_Mobile_App/frontend/GymApp/.env`)
+Create a file named `.env` inside `GYM_Mobile_App/frontend/GymApp/` and set:
+
+```ini
+EXPO_PUBLIC_API_URL=http://localhost:5000
+```
+*(Replace with your computer's local IP address, e.g., `http://192.168.1.15:5000`, when testing on physical mobile devices via Expo Go).*
+
+---
+
+## 🚀 Easy Step-by-Step Local Setup & Build
+
+### 1. Setup Python AI Services
+Activate a virtual environment and launch FastAPI:
 
 ```bash
 cd AI_Models
 
-# Create Environment (Windows)
-py -3.10 -m venv venv
-
-# Create Environment (Mac/Linux)
-python3.10 -m venv venv
-
-# Activate Environment (Windows PowerShell)
+# Setup Virtual Environment
+python -m venv venv
+# On Windows PowerShell:
 .\venv\Scripts\Activate.ps1
-
-# Activate Environment (Windows CMD)
-.\venv\Scripts\activate.bat
-
-# Activate Environment (Mac/Linux)
+# On Mac/Linux:
 source venv/bin/activate
-```
 
-### 3. Install Python Dependencies & Assets
-With your virtual environment activated, install the required packages and configure the downloaded assets:
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-###  4. Place Dataset & Models
-After downloading the assets from Hugging Face, extract the compressed files and arrange them inside the project folder exactly as shown below:
-
-***A. Place Dataset***
-* Action: Extract your downloaded `GymApp-DataSet` zip folder.
-* Destination: Place the extracted folder inside `AI_Models/`.
-
-***B. Place Models***
-* Action: Extract your downloaded `GymApp-AI-Models` zip folder.
-* Destination: Place the extracted model files inside `AI_Models/`.
-
-### 🔍 Expected Folder Structure Verification
-Your directory layout must look like this before running the servers:
-```text
-─ AI_Models/                 
-   ├── AI_Models_Code/
-   ├── datasets/
-   ├── notebooks/
-   ├── saved_models/         
-   ├── venv/              
-   └── requirements.txt 
-```
-
-### 5. Boot Up the AI Services
-```bash
+# Start FastAPI server
 cd AI_Models_Code
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8000
 ```
-The AI microservice will now be running locally.
+FastAPI Swagger documentation will be accessible at `http://127.0.0.1:8000/docs`.
 
----
+### 2. Setup Node.js API Gateway
+Initialize packages and launch the gateway:
 
-## 💻 Backend Setup
-Open two separate terminal instances to boot up the application layers.
-
-### 1. Backend Setup (Node.js & Express)
 ```bash
-cd GYM_Mobile_App/backend
+cd ../../GYM_Mobile_App/backend
 npm install
-```
 
-### 2. Create .env
-Create a `.env` file inside `GYM_Mobile_App/backend` and add your environment variables:
-
-```bash
-PORT=5000
-MONGO_URI=mongodb+srv://manuka2004:manu0329@gymapp.6teenua.mongodb.net/?appName=GymApp
-```
-### 3. Launch the server
-
-```bash
+# Start development server
 node server.js
 ```
+The console will report `Server is running on port 5000`.
 
----
-
-## 📱 Frontend Setup
-
-### 1. Frontend Setup (React Native & Expo)
+### 3. Setup React Native Expo Frontend
+Initialize Expo packages and launch the bundler:
 
 ```bash
-cd GYM_Mobile_App/frontend/GymApp
+cd ../frontend/GymApp
 npm install
-npx expo start
+
+# Run on Web browser
+npm run web
+
+# Run on Mobile emulator / Physical device
+npm run start
 ```
 
 ---
 
-## 📲 How to view the App:
+## 📱 Android Production Build Configuration (APK)
 
-* Download the Expo Go application from the Google Play Store or Apple App Store.
-* Ensure your mobile device is connected to the same Wi-Fi network as your computer.
-* Scan the QR code generated in your terminal by Expo.
+AuraFit is optimized for compilation into standalone Android APK packages:
+* **Package Name**: `com.aurafit.app`
+* **Version Control**: Version `1.0.0`, build code `1`.
+* **Hardware Permissions Configured**:
+  * Camera (`android.permission.CAMERA`)
+  * Media storage read/write
+* **Expo Plugins**: Auto-bundles the `expo-image-picker` permissions handler.
+
+### Compiling standalone APK using EAS Build:
+1. Install EAS CLI: `npm install -g eas-cli`
+2. Login to Expo: `eas login`
+3. Configure build profile: `eas build:configure`
+4. Build APK: `eas build --platform android --profile preview`
 
 ---
 
-## 🔐 Demo Login Credentials
-You can use the following default credentials to log in and test the specific user dashboard roles within the platform:
+## 🔐 Mock & Demo User Verification
+
+To ease pre-flight checks, if real Firebase credentials are not supplied, the backend falls back to standard mock objects. You can log in and test specific roles using:
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
-| 👤 Standard User | `User01@.com` (up to `User05@.com`) | `123456` |
-| 🏢 Gym Owner | `Gym01@.com` (up to `Gym05@.com`) | `123456` |
-| 💪 Fitness Coach | `Coach01@.com` (up to `Coach05@.com`) | `123456` |
-| 👨‍💼 Admin User | `Admin01@.com` (up to `Admin05@.com`) | `123456`|
-
----
-
-## 🛠️ Technologies Used
-* **Frontend:** React Native, Expo Framework
-* **Backend & DB:** Node.js, Express.js, MongoDB Atlas
-* **AI & Data Science:** Python, Scikit-Learn, Pandas, NumPy, FastAPI
-* **Version Control:** Git & GitHub
-
----
-
-## 📜 License & Credits
-This project was developed for educational and research purposes.
-
-**Developed By:** [Manuka Abeysekara]()
-
-
-
-
+| 👤 Standard User | `User01@.com` | `123456` |
+| 🏢 Gym Owner | `Gym01@.com` | `123456` |
+| 💪 Fitness Coach | `Coach01@.com` | `123456` |
+| 👨‍💼 Admin User | `Admin01@.com` | `123456` |

@@ -304,6 +304,7 @@ const styles = StyleSheet.create({
   },
   imageCanvasContainer: {
     width: '100%',
+    maxWidth: 500,
     aspectRatio: 1.1,
     backgroundColor: CARD,
     borderRadius: 24,
@@ -364,6 +365,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     width: '100%',
+    maxWidth: 500,
     marginBottom: 20,
   },
   actionButton: {
@@ -388,6 +390,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: ACCENT_EMERALD,
     width: '100%',
+    maxWidth: 500,
     height: 54,
     borderRadius: 16,
     gap: 8,
@@ -416,6 +419,7 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     width: '100%',
+    maxWidth: 500,
     backgroundColor: CARD,
     borderRadius: 24,
     borderWidth: 1.5,

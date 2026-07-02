@@ -299,6 +299,7 @@ const styles = StyleSheet.create({
   },
   dashboardContainer: {
     width: '100%',
+    maxWidth: 600,
     gap: 20,
   },
   metricsGrid: {
