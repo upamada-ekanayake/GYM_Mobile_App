@@ -1,0 +1,15 @@
+# Your list 
+datasets/
+notebooks/.ipynb_checkpoints/
+saved_models/
+venv/
+
+# Python background cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd 
+
+# System hidden files
+.DS_Store
+Thumbs.db
