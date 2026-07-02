@@ -12,5 +12,6 @@ router.patch('/user-workout-update-duration/:userId/:workoutId', WorkoutsControl
 router.delete('/user-workout-delete/:userId/:workoutId', WorkoutsController.User_Workout_Delete);
 router.get('/user-workout-get-details/:userId/:workoutId', WorkoutsController.User_Workout_GetDetails);
 router.get('/user-workout-get-all-details/:userId', WorkoutsController.User_Workout_GetAllDetails);
+router.get('/analytics/summary', WorkoutsController.User_Workout_GetAnalyticsSummary);
 
 module.exports = router;

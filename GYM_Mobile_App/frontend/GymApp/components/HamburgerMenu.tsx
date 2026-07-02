@@ -72,7 +72,8 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
       '/supplements',
       '/workouts',
       '/calorietracker',
-      '/watertracker'
+      '/watertracker',
+      '/progressdashboard'
     ];
     return restrictedRoutes.includes(route);
   };
@@ -278,6 +279,21 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
                     <Text style={getMenuItemStyles('/workouts').text}>Workouts</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/workouts').chevronColor} />
+                </TouchableOpacity>
+              )}
+
+              {/* 5.5 Progress Dashboard (USER ONLY) */}
+              {currentRole === 'User' && (
+                <TouchableOpacity
+                  style={getMenuItemStyles('/progressdashboard').container}
+                  onPress={() => handleItemPress('/progressdashboard')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuItemLeft}>
+                    <Ionicons name="trending-up-outline" size={22} color={getMenuItemStyles('/progressdashboard').iconColor} />
+                    <Text style={getMenuItemStyles('/progressdashboard').text}>Analytics</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/progressdashboard').chevronColor} />
                 </TouchableOpacity>
               )}
 
