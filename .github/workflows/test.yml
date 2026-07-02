@@ -1,0 +1,53 @@
+name: AuraFit Automated Testing Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    name: Backend API Gateway Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: GYM_Mobile_App/backend/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          cd GYM_Mobile_App/backend
+          npm ci
+
+      - name: Run Backend Tests
+        run: |
+          cd GYM_Mobile_App/backend
+          npm test
+
+  test-ai-service:
+    name: Python AI Microservices Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: AI_Models/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r AI_Models/requirements.txt
+
+      - name: Run PyTest Suite
+        run: |
+          pytest AI_Models/
