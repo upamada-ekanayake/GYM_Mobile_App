@@ -131,3 +131,27 @@ exports.predictFood = async (req, res) => {
         return handleAIError(error, res);
     }
 };
+
+// --- 04. AI Workout Planner Model Recommendation --- //
+exports.predictWorkoutPlan = async (req, res) => {
+    try {
+        const { age, sex, height, weight, hypertension, diabetes, experienceLevel, workoutGoal } = req.body;
+
+        // Forward JSON payload to FastAPI server
+        const response = await axios.post(`${FASTAPI_BASE_URL}/predict/workout-plan`, {
+            Age: Number(age),
+            Sex: sex,
+            Height: Number(height),
+            Weight: Number(weight),
+            Hypertension: hypertension || 'No',
+            Diabetes: diabetes || 'No',
+            ExperienceLevel: experienceLevel || 'Beginner',
+            WorkoutGoal: workoutGoal
+        }, { timeout: AXIOS_TIMEOUT });
+
+        return res.status(200).json(response.data);
+
+    } catch (error) {
+        return handleAIError(error, res);
+    }
+};

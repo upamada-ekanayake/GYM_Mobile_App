@@ -74,7 +74,8 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
       '/calorietracker',
       '/watertracker',
       '/progressdashboard',
-      '/foodscanner'
+      '/foodscanner',
+      '/workoutplanner'
     ];
     return restrictedRoutes.includes(route);
   };
@@ -280,6 +281,21 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
                     <Text style={getMenuItemStyles('/workouts').text}>Workouts</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/workouts').chevronColor} />
+                </TouchableOpacity>
+              )}
+
+              {/* 5.2 AI Workout Planner (USER ONLY) */}
+              {currentRole === 'User' && (
+                <TouchableOpacity
+                  style={getMenuItemStyles('/workoutplanner').container}
+                  onPress={() => handleItemPress('/workoutplanner')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuItemLeft}>
+                    <Ionicons name="sparkles-outline" size={22} color={getMenuItemStyles('/workoutplanner').iconColor} />
+                    <Text style={getMenuItemStyles('/workoutplanner').text}>AI Workout Planner</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/workoutplanner').chevronColor} />
                 </TouchableOpacity>
               )}
 
