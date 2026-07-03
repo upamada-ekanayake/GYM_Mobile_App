@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,17 @@ import {
   ActivityIndicator,
   Modal,
   Keyboard,
+  Dimensions,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import HamburgerMenu from '../components/HamburgerMenu';
+import { Session } from '../constants/Session';
 
-/* ── Colour Tokens (matching app-wide theme) ── */
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/* ── Colour Tokens (AuraFit Premium Theme) ── */
 const ACCENT = '#8A2BE2'; // Aura Violet
 const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
 const BG = '#08080C'; // Deep Obsidian
@@ -25,30 +29,33 @@ const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
 const TEXT_SECONDARY = '#B3AEC6';
 const TEXT_MUTED = '#5C5570';
-const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
+
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
+interface WaterLogEntry {
+  timestamp: string;
+  amount: number;
+}
+
 export default function WaterTrackerScreen() {
-  const { role } = useLocalSearchParams();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const router = useRouter();
+  const userId = Session.getUserId();
 
-  /* ── Keyboard Height State ── */
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  /* ── State Hooks ── */
+  const [waterTarget, setWaterTarget] = useState<number>(2500); // default
+  const [waterLogs, setWaterLogs] = useState<WaterLogEntry[]>([]);
+  const [customAmount, setCustomAmount] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
-  /* ── Form State ── */
-  const [gender, setGender] = useState<'Male' | 'Female' | null>(null);
-  const [age, setAge] = useState('');
-  const [weight, setWeight] = useState('');
-  const [activityLevel, setActivityLevel] = useState<'Low' | 'Moderate' | 'High' | null>(null);
-  const [weather, setWeather] = useState<'Hot' | 'Normal' | 'Cold' | null>(null);
-
-  /* ── Calculation State ── */
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [predictedWater, setPredictedWater] = useState<number | null>(null);
-
-  /* ── Custom Popup State ── */
-  const [popup, setPopup] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success' | 'info' }>({
+  /* ── Custom Popup Alert State ── */
+  const [popup, setPopup] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'success' | 'info';
+  }>({
     visible: false,
     title: '',
     message: '',
@@ -63,420 +70,201 @@ export default function WaterTrackerScreen() {
     setPopup({ visible: false, title: '', message: '', type: 'info' });
   };
 
-  /* ── Keyboard Listener ── */
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  /* ── Frontend Validation ── */
-  const validateForm = (): boolean => {
-    if (gender === null) {
-      showPopup('Validation Error', 'Please select your Gender.', 'error');
-      return false;
+  /* ── Fetch User Details & Logs ── */
+  const loadUserDetails = async () => {
+    if (!userId) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user/user-details/${userId}`);
+      const data = await response.json();
+      if (response.ok && data.user) {
+        if (data.user.WaterTarget) {
+          setWaterTarget(Number(data.user.WaterTarget));
+        }
+        if (data.user.WaterLog) {
+          setWaterLogs(data.user.WaterLog);
+        }
+      }
+    } catch (err) {
+      console.warn('Error loading water logs:', err);
+    } finally {
+      setIsLoading(false);
     }
-
-    if (!age.trim()) {
-      showPopup('Validation Error', 'Please enter your Age.', 'error');
-      return false;
-    }
-    if (!/^\d+$/.test(age)) {
-      showPopup('Validation Error', 'Only numeric values are allowed for Age.', 'error');
-      return false;
-    }
-    const ageNum = Number(age);
-    if (ageNum < 0) {
-      showPopup('Validation Error', 'Age cannot be negative.', 'error');
-      return false;
-    }
-
-    if (!weight.trim()) {
-      showPopup('Validation Error', 'Please enter your Weight.', 'error');
-      return false;
-    }
-    if (isNaN(Number(weight))) {
-      showPopup('Validation Error', 'Only numeric values are allowed for Weight.', 'error');
-      return false;
-    }
-    const weightNum = Number(weight);
-    if (weightNum < 0) {
-      showPopup('Validation Error', 'Weight cannot be negative.', 'error');
-      return false;
-    }
-
-    if (!activityLevel) {
-      showPopup('Validation Error', 'Please select your Physical Activity Level.', 'error');
-      return false;
-    }
-
-    if (!weather) {
-      showPopup('Validation Error', 'Please select the Weather type.', 'error');
-      return false;
-    }
-
-    return true;
   };
 
-  /* ── Predict Water Intake ── */
-  const handleCalculate = async () => {
-    if (!validateForm()) return;
+  useEffect(() => {
+    loadUserDetails();
+  }, [userId]);
 
-    const startTime = Date.now();
+  /* ── Calculate Today's Intake ── */
+  const getTodayIntake = () => {
+    const todayStr = new Date().toDateString();
+    return waterLogs
+      .filter((log) => new Date(log.timestamp).toDateString() === todayStr)
+      .reduce((sum, log) => sum + log.amount, 0);
+  };
 
-    // Dismiss Mobile Keyboard & remove focus
-    Keyboard.dismiss();
+  const todayIntake = getTodayIntake();
+  const percentage = Math.min(Math.round((todayIntake / waterTarget) * 100), 100);
 
-    setIsCalculating(true);
-
-    const mappedGenderMale = gender === 'Male' ? 1 : 0;
-    
-    let mappedActivity = 0;
-    if (activityLevel === 'Low') mappedActivity = 0;
-    else if (activityLevel === 'Moderate') mappedActivity = 1;
-    else if (activityLevel === 'High') mappedActivity = 2;
-
-    let mappedWeatherHot = 0;
-    let mappedWeatherNormal = 0;
-    if (weather === 'Hot') {
-      mappedWeatherHot = 1;
-      mappedWeatherNormal = 0;
-    } else if (weather === 'Normal') {
-      mappedWeatherHot = 0;
-      mappedWeatherNormal = 1;
-    } else if (weather === 'Cold') {
-      mappedWeatherHot = 0;
-      mappedWeatherNormal = 0;
+  /* ── Log Water intake ── */
+  const handleAddWater = async (amount: number) => {
+    if (!userId) {
+      showPopup('Session Expired', 'Please login to track your daily intake.', 'error');
+      return;
+    }
+    if (amount <= 0 || isNaN(amount)) {
+      showPopup('Invalid Amount', 'Please enter a valid water amount.', 'error');
+      return;
     }
 
+    setIsActionLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/ai-Model/predict-water`, {
-        method: 'POST',
+      const response = await fetch(`${BACKEND_URL}/api/user/user-log-water/${userId}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          Age: Number(age),
-          Weight: Number(weight),
-          Physical_Activity_Level: mappedActivity,
-          Gender_Male: mappedGenderMale,
-          Weather_Hot: mappedWeatherHot,
-          Weather_Normal: mappedWeatherNormal,
-        }),
+        body: JSON.stringify({ amount }),
       });
 
       const data = await response.json();
-
-      if (response.status === 200 && data.success) {
-        const elapsed = Date.now() - startTime;
-        const delay = Math.max(0, 320 - elapsed); // Wait for keyboard hide animation
-
-        setTimeout(() => {
-          setPredictedWater(data.water_intake_liters);
-          
-          // Smoothly scroll to the bottom to display the result card
-          setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }, delay);
+      if (response.ok) {
+        setWaterLogs((prev) => [...prev, data.entry]);
+        setCustomAmount('');
+        showPopup('Logged', `Added ${amount}ml to daily intake!`, 'success');
       } else {
-        showPopup('Prediction Error', data.message || 'Failed to calculate water intake prediction.', 'error');
+        showPopup('Error', data.message || 'Could not log intake.', 'error');
       }
-    } catch (err: any) {
-      showPopup('Network Error', 'Could not connect to the backend server.', 'error');
+    } catch (err) {
+      showPopup('Error', 'Network connection failure.', 'error');
     } finally {
-      const elapsed = Date.now() - startTime;
-      const delay = Math.max(0, 320 - elapsed);
-      setTimeout(() => {
-        setIsCalculating(false);
-      }, delay);
+      setIsActionLoading(false);
     }
   };
+
+  const formatTime = (isoString: string) => {
+    const d = new Date(isoString);
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+    return `${hours}:${minutesStr} ${ampm}`;
+  };
+
+  const todayLogs = waterLogs.filter(
+    (log) => new Date(log.timestamp).toDateString() === new Date().toDateString()
+  );
 
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
+      <HamburgerMenu currentRole="User" />
 
-      {/* ── Hamburger Menu ── */}
-      <HamburgerMenu currentRole={(role as any) || 'User'} />
-
-      <ScrollView
-        ref={scrollViewRef}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 60 }
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Decorative Glow Accent ── */}
-        <View style={styles.glowCircle} />
-
-        {/* ── Proper Page Heading ── */}
-        <Text style={styles.pageTitle}>AuraFit Water Tracker</Text>
-        <View style={styles.titleUnderline} />
-
-        {/* ── Form Container ── */}
-        <View style={styles.formContainer}>
-          
-          {/* 1. Gender Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Gender</Text>
-            <View style={styles.genderContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.genderCard,
-                  gender === 'Male' && styles.genderCardActive,
-                ]}
-                onPress={() => setGender('Male')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="male-outline"
-                  size={22}
-                  color={gender === 'Male' ? '#FFFFFF' : TEXT_SECONDARY}
-                />
-                <Text style={[styles.genderText, gender === 'Male' && styles.genderTextActive]}>
-                  Male
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.genderCard,
-                  gender === 'Female' && styles.genderCardActive,
-                ]}
-                onPress={() => setGender('Female')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="female-outline"
-                  size={22}
-                  color={gender === 'Female' ? '#FFFFFF' : TEXT_SECONDARY}
-                />
-                <Text style={[styles.genderText, gender === 'Female' && styles.genderTextActive]}>
-                  Female
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* 2 & 3. Age & Weight side-by-side */}
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Age</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="calendar-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Age"
-                  placeholderTextColor={TEXT_MUTED}
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  value={age}
-                  onChangeText={setAge}
-                />
-              </View>
-            </View>
-
-            <View style={{ width: 16 }} />
-
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Weight (kg)</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="fitness-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Weight"
-                  placeholderTextColor={TEXT_MUTED}
-                  keyboardType="numeric"
-                  value={weight}
-                  onChangeText={setWeight}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* 4. Physical Activity Level */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Physical Activity Level</Text>
-            <View style={styles.threeButtonsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  activityLevel === 'Low' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setActivityLevel('Low')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="walk-outline"
-                  size={18}
-                  color={activityLevel === 'Low' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, activityLevel === 'Low' && styles.threeButtonsTextActive]}>
-                  Low
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  activityLevel === 'Moderate' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setActivityLevel('Moderate')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="fitness-outline"
-                  size={18}
-                  color={activityLevel === 'Moderate' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, activityLevel === 'Moderate' && styles.threeButtonsTextActive]}>
-                  Moderate
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  activityLevel === 'High' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setActivityLevel('High')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="flame-outline"
-                  size={18}
-                  color={activityLevel === 'High' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, activityLevel === 'High' && styles.threeButtonsTextActive]}>
-                  High
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* 5. Weather Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Weather</Text>
-            <View style={styles.threeButtonsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  weather === 'Hot' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setWeather('Hot')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="sunny-outline"
-                  size={18}
-                  color={weather === 'Hot' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, weather === 'Hot' && styles.threeButtonsTextActive]}>
-                  Hot
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  weather === 'Normal' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setWeather('Normal')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="cloudy-outline"
-                  size={18}
-                  color={weather === 'Normal' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, weather === 'Normal' && styles.threeButtonsTextActive]}>
-                  Normal
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.threeButtonsCard,
-                  weather === 'Cold' && styles.threeButtonsCardActive,
-                ]}
-                onPress={() => setWeather('Cold')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="snow-outline"
-                  size={18}
-                  color={weather === 'Cold' ? '#FFFFFF' : ACCENT}
-                />
-                <Text style={[styles.threeButtonsText, weather === 'Cold' && styles.threeButtonsTextActive]}>
-                  Cold
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={ACCENT} />
+          <Text style={styles.loadingText}>Analyzing intake profile...</Text>
         </View>
-
-        {/* ── 6. Calculate Button ── */}
-        <TouchableOpacity
-          style={[styles.calculateButton, isCalculating && styles.calculateButtonDisabled]}
-          onPress={handleCalculate}
-          activeOpacity={0.85}
-          disabled={isCalculating}
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {isCalculating ? (
-            <View style={styles.loadingButtonContent}>
-              <ActivityIndicator size="small" color={BG} />
-              <Text style={styles.calculateButtonText}>Calculating...</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.pageTitle}>Water Hub</Text>
+            <Text style={styles.subTitle}>Track and optimize hydration baseline</Text>
+          </View>
+
+          {/* Progress Circular Hub */}
+          <View style={styles.progressHub}>
+            <View style={styles.outerCircle}>
+              <View style={styles.innerCircle}>
+                <Ionicons name="water" size={48} color={percentage >= 100 ? ACCENT_EMERALD : ACCENT} />
+                <Text style={styles.percentageText}>{percentage}%</Text>
+                <Text style={styles.progressLabel}>
+                  {todayIntake} / {waterTarget} ml
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick-Add Buttons */}
+          <Text style={styles.sectionLabel}>Quick Hydration Log</Text>
+          <View style={styles.quickAddRow}>
+            {[250, 500, 750].map((amount) => (
+              <TouchableOpacity
+                key={amount}
+                style={styles.quickAddCard}
+                onPress={() => handleAddWater(amount)}
+                activeOpacity={0.8}
+                disabled={isActionLoading}
+              >
+                <Ionicons name="water-outline" size={24} color={ACCENT_EMERALD} />
+                <Text style={styles.quickAddText}>+{amount}ml</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Precise Log Form */}
+          <View style={styles.customIntakeCard}>
+            <Text style={styles.cardHeader}>Custom Intake Entry</Text>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter amount in ml (e.g. 350)"
+                placeholderTextColor={TEXT_MUTED}
+                keyboardType="numeric"
+                value={customAmount}
+                onChangeText={setCustomAmount}
+              />
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => handleAddWater(Number(customAmount))}
+                activeOpacity={0.8}
+                disabled={isActionLoading || !customAmount}
+              >
+                {isActionLoading ? (
+                  <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                ) : (
+                  <Text style={styles.addButtonText}>Add</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Logs list */}
+          <Text style={styles.sectionLabel}>Today's Log Timeline</Text>
+          {todayLogs.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="hourglass-outline" size={32} color={TEXT_MUTED} />
+              <Text style={styles.emptyText}>No hydration logs for today yet.</Text>
             </View>
           ) : (
-            <>
-              <Text style={styles.calculateButtonText}>Calculate Water Intake</Text>
-              <Ionicons name="arrow-forward" size={20} color={BG} />
-            </>
+            todayLogs.map((log, index) => (
+              <View key={index} style={styles.logCard}>
+                <View style={styles.logLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name="checkmark" size={16} color={ACCENT_EMERALD} />
+                  </View>
+                  <Text style={styles.logTime}>{formatTime(log.timestamp)}</Text>
+                </View>
+                <Text style={styles.logAmount}>+{log.amount} ml</Text>
+              </View>
+            ))
           )}
-        </TouchableOpacity>
+        </ScrollView>
+      )}
 
-        {/* ── 7. Prediction Result Card ── */}
-        {predictedWater !== null && !isCalculating && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultEmojiText}>
-              💧 {predictedWater.toFixed(1)} L
-            </Text>
-            <Text style={styles.resultLabelText}>Total Water Intake</Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* ── Custom Popup Modal ── */}
-      <Modal
-        visible={popup.visible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={dismissPopup}
-      >
+      {/* Alert popup */}
+      <Modal visible={popup.visible} transparent={true} animationType="fade" onRequestClose={dismissPopup}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalMessage}>{popup.message}</Text>
-
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={dismissPopup}
-              activeOpacity={0.85}
-            >
+            <TouchableOpacity style={styles.modalButton} onPress={dismissPopup} activeOpacity={0.85}>
               <Text style={styles.modalButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
@@ -487,221 +275,198 @@ export default function WaterTrackerScreen() {
 }
 
 const styles = StyleSheet.create({
-  /* ── Screen ── */
   screen: {
     flex: 1,
     backgroundColor: BG,
   },
-  scrollContent: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    color: TEXT_SECONDARY,
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 80 : 65,
-    paddingBottom: 60,
+    paddingTop: Platform.OS === 'ios' ? 100 : 90,
+    paddingBottom: 40,
   },
-
-  /* ── Decorative Glow ── */
-  glowCircle: {
-    position: 'absolute',
-    top: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: ACCENT,
-    opacity: 0.08,
+  header: {
+    marginBottom: 30,
   },
-
-  /* ── Page Title ── */
   pageTitle: {
     fontSize: 28,
-    fontWeight: '900',
+    fontWeight: '800',
     color: TEXT_PRIMARY,
-    textAlign: 'center',
-    letterSpacing: 0.8,
-    marginTop: 10,
-    marginBottom: 8,
+    letterSpacing: 0.5,
   },
-  titleUnderline: {
-    width: 60,
-    height: 4,
-    backgroundColor: ACCENT,
-    borderRadius: 2,
-    marginBottom: 28,
-  },
-
-  /* ── Form Container ── */
-  formContainer: {
-    width: '100%',
-    gap: 18,
-    marginBottom: 28,
-  },
-  inputGroup: {
-    width: '100%',
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+  subTitle: {
+    fontSize: 14,
     color: TEXT_SECONDARY,
-    marginBottom: 8,
-    letterSpacing: 0.3,
-    marginLeft: 4,
+    marginTop: 4,
+  },
+  progressHub: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  outerCircle: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 6,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Glow effect
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+  },
+  innerCircle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  percentageText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    marginTop: 8,
+  },
+  progressLabel: {
+    fontSize: 12,
+    color: TEXT_SECONDARY,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 16,
+    marginTop: 12,
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  quickAddCard: {
+    flex: 1,
+    backgroundColor: CARD,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  quickAddText: {
+    color: TEXT_PRIMARY,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  customIntakeCard: {
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 20,
+    marginBottom: 30,
+  },
+  cardHeader: {
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 14,
   },
   inputWrapper: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    paddingHorizontal: 16,
-    height: 56,
-    width: '100%',
-  },
-  inputIcon: {
-    marginRight: 12,
+    gap: 12,
   },
   input: {
     flex: 1,
+    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 16,
     color: TEXT_PRIMARY,
-    fontSize: 15,
-    height: '100%',
+    fontSize: 14,
   },
-  row: {
-    flexDirection: 'row',
-    width: '100%',
-  },
-
-  /* ── Gender Selection ── */
-  genderContainer: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  genderCard: {
-    flex: 1,
-    flexDirection: 'row',
+  addButton: {
+    width: 80,
+    height: 48,
+    backgroundColor: ACCENT,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addButtonText: {
+    color: TEXT_PRIMARY,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
     backgroundColor: CARD,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: BORDER,
-    borderRadius: 16,
-    height: 56,
-    gap: 8,
   },
-  genderCardActive: {
-    backgroundColor: ACCENT,
-    borderColor: ACCENT,
+  emptyText: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    marginTop: 10,
   },
-  genderText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: TEXT_SECONDARY,
-  },
-  genderTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* ── Three Buttons Row (Activity & Weather) ── */
-  threeButtonsRow: {
+  logCard: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CARD,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 16,
+    marginBottom: 10,
+  },
+  logLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
-    width: '100%',
   },
-  threeButtonsCard: {
-    flex: 1,
-    flexDirection: 'row',
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 255, 135, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: CARD,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    borderRadius: 18,
-    height: 60,
-    gap: 6,
-    paddingHorizontal: 8,
   },
-  threeButtonsCardActive: {
-    backgroundColor: ACCENT,
-    borderColor: ACCENT,
-    shadowColor: ACCENT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  threeButtonsText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: TEXT_SECONDARY,
-  },
-  threeButtonsTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* ── Calculate Button ── */
-  calculateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: 56,
-    backgroundColor: ACCENT,
-    borderRadius: 16,
-    gap: 8,
-    shadowColor: ACCENT,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 10,
-    marginBottom: 28,
-  },
-  calculateButtonDisabled: {
-    opacity: 0.6,
-  },
-  loadingButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  calculateButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.6,
-  },
-
-  /* ── Prediction Result Card ── */
-  resultCard: {
-    width: '100%',
-    backgroundColor: CARD,
-    borderWidth: 1.5,
-    borderColor: ACCENT_EMERALD,
-    borderRadius: 24,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Shadow
-    shadowColor: ACCENT_EMERALD,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  resultEmojiText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: ACCENT_EMERALD,
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  resultLabelText: {
+  logTime: {
+    color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
-    textAlign: 'center',
   },
-
-  /* ── Custom Popup Modal ── */
+  logAmount: {
+    color: ACCENT_EMERALD,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -711,39 +476,31 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    backgroundColor: 'rgba(18, 18, 26, 0.95)',
+    backgroundColor: CARD,
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: BORDER,
-    paddingVertical: 32,
-    paddingHorizontal: 24,
+    padding: 24,
     alignItems: 'center',
-    // Glass shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 20,
   },
   modalMessage: {
     fontSize: 15,
-    color: TEXT_SECONDARY,
+    color: TEXT_PRIMARY,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 28,
+    marginBottom: 20,
   },
   modalButton: {
     width: '100%',
-    height: 50,
-    borderRadius: 16,
+    height: 48,
+    borderRadius: 12,
     backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: TEXT_PRIMARY,
-    letterSpacing: 0.5,
   },
 });

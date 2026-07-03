@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,15 +9,18 @@ import {
   ActivityIndicator,
   Platform,
   Modal,
-  SafeAreaView
+  SafeAreaView,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HamburgerMenu from '../components/HamburgerMenu';
 import { Session } from '../constants/Session';
 import { useLocalSearchParams } from 'expo-router';
 
-/* ── Colour Tokens (AuraFit Premium Dark/Neon Theme) ── */
-const ACCENT_VIOLET = '#8A2BE2'; // Aura Violet
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/* ── Colour Tokens ── */
+const ACCENT = '#8A2BE2'; // Aura Violet
 const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
 const BG = '#08080C'; // Deep Obsidian
 const CARD = '#12121A'; // Deep Charcoal
@@ -25,35 +28,58 @@ const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
 const TEXT_SECONDARY = '#B3AEC6';
 const TEXT_MUTED = '#5C5570';
+const ERROR_RED = '#EF4444';
+const SUCCESS_GREEN = '#22C55E';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
-type PickerType = 'gender' | 'experience' | 'goal' | 'hypertension' | 'diabetes' | null;
+interface Workout {
+  _id: string;
+  workoutName: string;
+  sets: number;
+  reps: number;
+  weight: number;
+  duration: number;
+  dayOfWeek: string;
+  category: 'Volume' | 'Time';
+}
+
+const DAYS_OF_WEEK = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
 
 export default function WorkoutPlannerScreen() {
   const { role } = useLocalSearchParams();
+  const userId = Session.getUserId();
 
-  // Form Inputs
-  const [age, setAge] = useState('');
-  const [height, setHeight] = useState('');
-  const [weight, setWeight] = useState('');
-  const [gender, setGender] = useState<'Male' | 'Female' | null>(null);
-  const [experience, setExperience] = useState<'Beginner' | 'Intermediate' | 'Advanced' | null>(null);
-  const [goal, setGoal] = useState<'Weight Loss' | 'Muscle Gain' | 'Strength' | 'Endurance' | null>(null);
-  const [hypertension, setHypertension] = useState<'No' | 'Yes'>('No');
-  const [diabetes, setDiabetes] = useState<'No' | 'Yes'>('No');
+  /* ── State Hooks ── */
+  const [selectedDay, setSelectedDay] = useState<string>('Monday');
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
-  // Request State
-  const [loading, setLoading] = useState(false);
-  const [calculatedBmi, setCalculatedBmi] = useState<number | null>(null);
-  const [recommendedPlan, setRecommendedPlan] = useState<string | null>(null);
-  const [isSaved, setIsSaved] = useState(false);
+  /* ── Add Workout Modal State ── */
+  const [addModalVisible, setAddModalVisible] = useState<boolean>(false);
+  const [workoutName, setWorkoutName] = useState<string>('');
+  const [sets, setSets] = useState<string>('');
+  const [reps, setReps] = useState<string>('');
+  const [weight, setWeight] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
+  const [exerciseCategory, setExerciseCategory] = useState<'Volume' | 'Time'>('Volume');
 
-  // Custom Modal Picker State
-  const [activePicker, setActivePicker] = useState<PickerType>(null);
-
-  // Custom Popup Alert State
-  const [popup, setPopup] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success' | 'info' }>({
+  /* ── Custom Popup Alert State ── */
+  const [popup, setPopup] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'success' | 'info';
+  }>({
     visible: false,
     title: '',
     message: '',
@@ -68,343 +94,308 @@ export default function WorkoutPlannerScreen() {
     setPopup({ visible: false, title: '', message: '', type: 'info' });
   };
 
-  const handlePredict = async () => {
-    if (!age || !height || !weight || !gender || !experience || !goal) {
-      showPopup('Missing Fields', 'Please fill in all requested fields to generate your custom program.', 'error');
-      return;
-    }
-
-    const ageNum = parseInt(age);
-    const heightNum = parseFloat(height);
-    const weightNum = parseFloat(weight);
-
-    if (isNaN(ageNum) || ageNum <= 0 || ageNum > 120) {
-      showPopup('Invalid Input', 'Please enter a valid age.', 'error');
-      return;
-    }
-    if (isNaN(heightNum) || heightNum < 50 || heightNum > 250) {
-      showPopup('Invalid Input', 'Please enter a valid height in cm (e.g. 175).', 'error');
-      return;
-    }
-    if (isNaN(weightNum) || weightNum < 10 || weightNum > 500) {
-      showPopup('Invalid Input', 'Please enter a valid weight in kg (e.g. 70).', 'error');
-      return;
-    }
-
-    setLoading(true);
-    setRecommendedPlan(null);
-    setIsSaved(false);
-
+  /* ── Fetch Planned Workouts ── */
+  const fetchPlannedWorkouts = async () => {
+    if (!userId) return;
     try {
-      const token = Session.getToken();
-      const response = await fetch(`${BACKEND_URL}/api/ai-Model/predict-workout-plan`, {
+      const response = await fetch(`${BACKEND_URL}/api/workouts/user-workout-get-all-details/${userId}`);
+      const data = await response.json();
+      if (response.ok && data.workouts) {
+        setWorkouts(data.workouts);
+      }
+    } catch (err) {
+      console.warn('Error loading plans:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPlannedWorkouts();
+  }, [userId]);
+
+  /* ── Save Workout Plan ── */
+  const handleSaveWorkout = async () => {
+    if (!userId) {
+      showPopup('Session Expired', 'Please login to configure routines.', 'error');
+      return;
+    }
+    if (!workoutName.trim() || !sets.trim()) {
+      showPopup('Validation Error', 'Workout Name and Sets are required.', 'error');
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      // Structure based on Category
+      const setsNum = Number(sets);
+      const weightNum = Number(weight) || 0;
+      const repsNum = exerciseCategory === 'Volume' ? Number(reps) || 0 : 0;
+      const durationNum = exerciseCategory === 'Time' ? Number(duration) || 0 : 0;
+
+      const response = await fetch(`${BACKEND_URL}/api/workouts/user-workout-create/${userId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : ''
         },
         body: JSON.stringify({
-          age: ageNum,
-          sex: gender,
-          height: heightNum,
+          workoutName: workoutName.trim(),
+          sets: setsNum,
+          reps: repsNum,
           weight: weightNum,
-          hypertension,
-          diabetes,
-          experienceLevel: experience,
-          workoutGoal: goal
-        })
+          duration: durationNum,
+          dayOfWeek: selectedDay,
+          category: exerciseCategory,
+        }),
       });
 
       const data = await response.json();
-      if (response.ok && data.success) {
-        setRecommendedPlan(data.recommended_plan);
-        setCalculatedBmi(data.calculated_bmi);
+      if (response.ok) {
+        // Workout list returns updated list
+        await fetchPlannedWorkouts();
+        setAddModalVisible(false);
+        // Clear fields
+        setWorkoutName('');
+        setSets('');
+        setReps('');
+        setWeight('');
+        setDuration('');
+        showPopup('Routine Configured', `${workoutName} planned for ${selectedDay}!`, 'success');
       } else {
-        showPopup('Inference Error', data.message || 'AI prediction model failed.', 'error');
+        showPopup('Error', data.message || 'Could not save routine.', 'error');
       }
-    } catch (err: any) {
-      showPopup('Network Error', err.message || 'Error communicating with backend model gateway.', 'error');
+    } catch (err) {
+      showPopup('Error', 'Connection failure.', 'error');
     } finally {
-      setLoading(false);
+      setIsActionLoading(false);
     }
   };
 
-  // Mock list of exercises mapping dynamically based on the plan string contents
-  const getExercisesList = (plan: string) => {
-    const isCardio = plan.toLowerCase().includes('walk') || plan.toLowerCase().includes('cycl') || plan.toLowerCase().includes('run');
-    if (isCardio) {
-      return [
-        { day: 'Day 1', name: 'LISS Cardio Training (30-45 mins)', reps: 'Zone 2 Heart Rate' },
-        { day: 'Day 2', name: 'Active Recovery Walk or Cycle', reps: '30 mins low-intensity' },
-        { day: 'Day 3', name: 'HIIT Cardio Circuit', reps: '5 intervals of 1 min on / 1 min off' },
-        { day: 'Day 4', name: 'Low Impact Cardio (Rowing/Swimming)', reps: '40 mins constant speed' },
-        { day: 'Day 5', name: 'Steady State Run or Jog', reps: '5km target or 35 mins' }
-      ];
-    } else {
-      return [
-        { day: 'Day 1', name: 'Compound Pull Exercises (Deadlifts, Rows)', reps: '3 Sets × 8-10 Reps' },
-        { day: 'Day 2', name: 'Push Exercises (Bench Press, Overhead Press)', reps: '3 Sets × 8-12 Reps' },
-        { day: 'Day 3', name: 'Lower Body Leg Routine (Squats, Lunges)', reps: '4 Sets × 10 Reps' },
-        { day: 'Day 4', name: 'Core Activation & Shoulder Detailing', reps: '3 Sets × 12-15 Reps' },
-        { day: 'Day 5', name: 'Full Body Functional Pump Circuit', reps: '4 Sets × 8 reps per station' }
-      ];
-    }
-  };
-
-  const handleSaveToDiary = () => {
-    setIsSaved(true);
-    showPopup('Plan Saved', 'Your custom AI Workout routine has been saved to your FitTrack Diary!', 'success');
-  };
-
-  const renderPickerModal = () => {
-    if (!activePicker) return null;
-
-    let title = '';
-    let options: string[] = [];
-    let onSelect: (value: any) => void = () => {};
-
-    if (activePicker === 'gender') {
-      title = 'Select Gender';
-      options = ['Male', 'Female'];
-      onSelect = (val) => setGender(val);
-    } else if (activePicker === 'experience') {
-      title = 'Select Experience Level';
-      options = ['Beginner', 'Intermediate', 'Advanced'];
-      onSelect = (val) => setExperience(val);
-    } else if (activePicker === 'goal') {
-      title = 'Select Fitness Goal';
-      options = ['Weight Loss', 'Muscle Gain', 'Strength', 'Endurance'];
-      onSelect = (val) => setGoal(val);
-    } else if (activePicker === 'hypertension') {
-      title = 'Diagnosed Hypertension?';
-      options = ['No', 'Yes'];
-      onSelect = (val) => setHypertension(val);
-    } else if (activePicker === 'diabetes') {
-      title = 'Diagnosed Diabetes?';
-      options = ['No', 'Yes'];
-      onSelect = (val) => setDiabetes(val);
-    }
-
-    return (
-      <Modal visible={true} transparent={true} animationType="fade" onRequestClose={() => setActivePicker(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <View style={styles.modalSeparator} />
-            
-            {options.map((opt, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.pickerItem}
-                onPress={() => {
-                  onSelect(opt);
-                  setActivePicker(null);
-                }}
-              >
-                <Text style={styles.pickerItemText}>{opt}</Text>
-                <Ionicons name="chevron-forward" size={16} color={ACCENT_VIOLET} />
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity style={styles.pickerCancelButton} onPress={() => setActivePicker(null)}>
-              <Text style={styles.pickerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
+  const filteredWorkouts = workouts.filter((w) => w.dayOfWeek === selectedDay);
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <HamburgerMenu currentRole={(role as any) || 'User'} />
+    <View style={styles.screen}>
+      <StatusBar style="light" />
+      <HamburgerMenu currentRole="User" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Decorative ambient violet circle */}
-        <View style={styles.glowCircle} />
-
-        <Text style={styles.pageTitle}>AI Workout Planner</Text>
-        <View style={styles.titleUnderline} />
-
-        {/* ── Inputs Card ── */}
-        <View style={styles.formContainer}>
-          <Text style={styles.formSectionTitle}>Biometric Parameters</Text>
-
-          {/* Age Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Age</Text>
-            <TextInput
-              style={styles.textInput}
-              keyboardType="number-pad"
-              placeholder="e.g. 25"
-              placeholderTextColor={TEXT_MUTED}
-              value={age}
-              onChangeText={setAge}
-            />
-          </View>
-
-          {/* Height and Weight Row */}
-          <View style={styles.inputRow}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Height (cm)</Text>
-              <TextInput
-                style={styles.textInput}
-                keyboardType="number-pad"
-                placeholder="e.g. 178"
-                placeholderTextColor={TEXT_MUTED}
-                value={height}
-                onChangeText={setHeight}
-              />
-            </View>
-
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Weight (kg)</Text>
-              <TextInput
-                style={styles.textInput}
-                keyboardType="number-pad"
-                placeholder="e.g. 74"
-                placeholderTextColor={TEXT_MUTED}
-                value={weight}
-                onChangeText={setWeight}
-              />
-            </View>
-          </View>
-
-          {/* Dropdown Selectors */}
-          <View style={styles.dropdownRow}>
-            {/* Gender Selection */}
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setActivePicker('gender')}>
-              <Text style={styles.dropdownLabel}>Gender</Text>
-              <View style={styles.dropdownValueWrapper}>
-                <Text style={styles.dropdownValue}>{gender || 'Select'}</Text>
-                <Ionicons name="chevron-down" size={16} color={ACCENT_EMERALD} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Experience Level */}
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setActivePicker('experience')}>
-              <Text style={styles.dropdownLabel}>Experience</Text>
-              <View style={styles.dropdownValueWrapper}>
-                <Text style={styles.dropdownValue}>{experience || 'Select'}</Text>
-                <Ionicons name="chevron-down" size={16} color={ACCENT_EMERALD} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.dropdownRow}>
-            {/* Goal Selection */}
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setActivePicker('goal')}>
-              <Text style={styles.dropdownLabel}>Fitness Goal</Text>
-              <View style={styles.dropdownValueWrapper}>
-                <Text style={styles.dropdownValue}>{goal || 'Select'}</Text>
-                <Ionicons name="chevron-down" size={16} color={ACCENT_EMERALD} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.modalSeparator} />
-          <Text style={styles.formSectionTitle}>Health Indicators (Optional)</Text>
-
-          <View style={styles.dropdownRow}>
-            {/* Hypertension */}
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setActivePicker('hypertension')}>
-              <Text style={styles.dropdownLabel}>Hypertension</Text>
-              <View style={styles.dropdownValueWrapper}>
-                <Text style={styles.dropdownValue}>{hypertension}</Text>
-                <Ionicons name="chevron-down" size={16} color={ACCENT_VIOLET} />
-              </View>
-            </TouchableOpacity>
-
-            {/* Diabetes */}
-            <TouchableOpacity style={styles.dropdownButton} onPress={() => setActivePicker('diabetes')}>
-              <Text style={styles.dropdownLabel}>Diabetes</Text>
-              <View style={styles.dropdownValueWrapper}>
-                <Text style={styles.dropdownValue}>{diabetes}</Text>
-                <Ionicons name="chevron-down" size={16} color={ACCENT_VIOLET} />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          {/* Predict Button */}
-          <TouchableOpacity style={styles.predictButton} onPress={handlePredict} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator size="small" color={BG} />
-            ) : (
-              <>
-                <Text style={styles.predictButtonText}>Generate Routine</Text>
-                <Ionicons name="sparkles" size={18} color={BG} />
-              </>
-            )}
-          </TouchableOpacity>
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={ACCENT} />
+          <Text style={styles.loadingText}>Syncing routines calendar...</Text>
         </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.pageTitle}>Routine Planner</Text>
+            <Text style={styles.subTitle}>Configure routines per day of the week</Text>
+          </View>
 
-        {/* ── Glowing Recommended Workout Results ── */}
-        {recommendedPlan && !loading && (
-          <View style={styles.resultsCard}>
-            <View style={styles.resultsHeader}>
-              <Ionicons name="barbell-outline" size={26} color={ACCENT_EMERALD} />
-              <Text style={styles.resultsTitle}>FitTrack Recommendation</Text>
-            </View>
+          {/* 7-Day Selector Carousel */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.carouselContainer}
+          >
+            {DAYS_OF_WEEK.map((day) => {
+              const isActive = selectedDay === day;
+              const hasWorkouts = workouts.some((w) => w.dayOfWeek === day);
+              return (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.dayTab, isActive && styles.dayTabActive]}
+                  onPress={() => setSelectedDay(day)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.dayTabText, isActive && styles.dayTabTextActive]}>
+                    {day.substring(0, 3)}
+                  </Text>
+                  {hasWorkouts && (
+                    <View style={[styles.dotMarker, isActive && styles.dotMarkerActive]} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-            <View style={styles.bmiBanner}>
-              <Text style={styles.bmiText}>
-                Calculated BMI: <Text style={styles.highlightText}>{calculatedBmi}</Text>
-              </Text>
-            </View>
-
-            <View style={styles.recommendationContainer}>
-              <Text style={styles.recommendationLabel}>Your Core Recommended Exercises</Text>
-              <Text style={styles.recommendationText}>{recommendedPlan}</Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            {/* Target Exercises Breakdown */}
-            <Text style={styles.breakdownTitle}>Routine Target Splits</Text>
-            <View style={styles.exercisesList}>
-              {getExercisesList(recommendedPlan).map((ex, idx) => (
-                <View key={idx} style={styles.exerciseItem}>
-                  <View style={styles.exerciseLeft}>
-                    <View style={styles.dayBadge}>
-                      <Text style={styles.dayBadgeText}>{ex.day}</Text>
-                    </View>
-                    <Text style={styles.exerciseName}>{ex.name}</Text>
-                  </View>
-                  <Text style={styles.exerciseReps}>{ex.reps}</Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Save to fitTrack Diary */}
-            <TouchableOpacity 
-              style={[styles.saveButton, isSaved && styles.saveButtonDisabled]} 
-              onPress={handleSaveToDiary}
-              disabled={isSaved}
+          {/* Planned Routines list */}
+          <View style={styles.routineListHeader}>
+            <Text style={styles.sectionLabel}>{selectedDay}'s Routine</Text>
+            <TouchableOpacity
+              style={styles.addRoutineBtn}
+              onPress={() => setAddModalVisible(true)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.saveButtonText}>
-                {isSaved ? 'Saved to Diary ✅' : 'Save to FitTrack Diary'}
-              </Text>
+              <Ionicons name="add" size={16} color={ACCENT_EMERALD} />
+              <Text style={styles.addRoutineText}>Add Exercise</Text>
             </TouchableOpacity>
           </View>
-        )}
 
-      </ScrollView>
+          {filteredWorkouts.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="calendar-outline" size={32} color={TEXT_MUTED} />
+              <Text style={styles.emptyText}>Rest Day! No routines scheduled for {selectedDay}.</Text>
+            </View>
+          ) : (
+            filteredWorkouts.map((workout, index) => (
+              <View key={index} style={styles.workoutCard}>
+                <View style={styles.cardLeft}>
+                  <View style={[styles.categoryBadge, workout.category === 'Time' ? styles.timeBadge : styles.volumeBadge]}>
+                    <Text style={styles.categoryBadgeText}>
+                      {workout.category || 'Volume'}
+                    </Text>
+                  </View>
+                  <Text style={styles.workoutTitle}>{workout.workoutName}</Text>
+                  <Text style={styles.workoutStats}>
+                    {workout.sets} Sets ×{' '}
+                    {workout.category === 'Time'
+                      ? `${workout.duration}s`
+                      : `${workout.reps} Reps`}{' '}
+                    | {workout.weight} kg
+                  </Text>
+                </View>
+                <Ionicons
+                  name={workout.category === 'Time' ? 'timer-outline' : 'barbell-outline'}
+                  size={20}
+                  color={ACCENT}
+                />
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
 
-      {/* Render modals */}
-      {renderPickerModal()}
+      {/* Add Exercise Modal */}
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalScroll}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add Routine ({selectedDay})</Text>
+                <TouchableOpacity onPress={() => setAddModalVisible(false)}>
+                  <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
+                </TouchableOpacity>
+              </View>
 
-      {/* Custom Popup Alert */}
+              {/* Exercise Category Selector */}
+              <Text style={styles.inputLabel}>Tracking Method</Text>
+              <View style={styles.categorySelector}>
+                <TouchableOpacity
+                  style={[styles.categoryBtn, exerciseCategory === 'Volume' && styles.categoryBtnActive]}
+                  onPress={() => setExerciseCategory('Volume')}
+                >
+                  <Text style={[styles.categoryBtnText, exerciseCategory === 'Volume' && styles.categoryBtnTextActive]}>
+                    Volume (Sets × Reps)
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.categoryBtn, exerciseCategory === 'Time' && styles.categoryBtnActive]}
+                  onPress={() => setExerciseCategory('Time')}
+                >
+                  <Text style={[styles.categoryBtnText, exerciseCategory === 'Time' && styles.categoryBtnTextActive]}>
+                    Time (Sets × Duration)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Form fields */}
+              <Text style={styles.inputLabel}>Exercise Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Bench Press"
+                placeholderTextColor={TEXT_MUTED}
+                value={workoutName}
+                onChangeText={setWorkoutName}
+              />
+
+              <View style={styles.formRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Sets</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 4"
+                    placeholderTextColor={TEXT_MUTED}
+                    keyboardType="numeric"
+                    value={sets}
+                    onChangeText={setSets}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Weight (kg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 40"
+                    placeholderTextColor={TEXT_MUTED}
+                    keyboardType="numeric"
+                    value={weight}
+                    onChangeText={setWeight}
+                  />
+                </View>
+              </View>
+
+              {exerciseCategory === 'Volume' ? (
+                <View>
+                  <Text style={styles.inputLabel}>Reps</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 10"
+                    placeholderTextColor={TEXT_MUTED}
+                    keyboardType="numeric"
+                    value={reps}
+                    onChangeText={setReps}
+                  />
+                </View>
+              ) : (
+                <View>
+                  <Text style={styles.inputLabel}>Duration (Seconds)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 60"
+                    placeholderTextColor={TEXT_MUTED}
+                    keyboardType="numeric"
+                    value={duration}
+                    onChangeText={setDuration}
+                  />
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSaveWorkout}
+                activeOpacity={0.8}
+                disabled={isActionLoading}
+              >
+                {isActionLoading ? (
+                  <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                ) : (
+                  <Text style={styles.saveBtnText}>Plan Routine</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Alert popup */}
       <Modal visible={popup.visible} transparent={true} animationType="fade" onRequestClose={dismissPopup}>
-        <View style={styles.alertOverlay}>
+        <View style={styles.modalOverlay}>
           <View style={styles.alertCard}>
             <Text style={styles.alertMessage}>{popup.message}</Text>
-            <TouchableOpacity style={styles.alertButton} onPress={dismissPopup}>
+            <TouchableOpacity style={styles.alertButton} onPress={dismissPopup} activeOpacity={0.85}>
               <Text style={styles.alertButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -413,362 +404,277 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-  scrollContent: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    color: TEXT_SECONDARY,
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 80 : 65,
-    paddingBottom: 60,
+    paddingTop: Platform.OS === 'ios' ? 100 : 90,
+    paddingBottom: 40,
   },
-  glowCircle: {
-    position: 'absolute',
-    top: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: ACCENT_VIOLET,
-    opacity: 0.08,
-  },
-  pageTitle: {
-    fontSize: 26,
-    fontWeight: '950',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-    letterSpacing: 0.8,
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  titleUnderline: {
-    width: 60,
-    height: 4,
-    backgroundColor: ACCENT_EMERALD,
-    borderRadius: 2,
-    marginBottom: 28,
-  },
-  formContainer: {
-    width: '100%',
-    maxWidth: 600,
-    backgroundColor: CARD,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    padding: 20,
-    gap: 16,
+  header: {
     marginBottom: 24,
   },
-  formSectionTitle: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
+  pageTitle: {
+    fontSize: 28,
     fontWeight: '800',
+    color: TEXT_PRIMARY,
     letterSpacing: 0.5,
-    marginBottom: 4,
   },
-  inputGroup: {
-    gap: 8,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  inputLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  textInput: {
-    width: '100%',
-    height: 52,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderWidth: 1,
-    borderColor: '#241C35',
-    borderRadius: 16,
-    color: TEXT_PRIMARY,
-    paddingHorizontal: 16,
+  subTitle: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  dropdownRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  dropdownButton: {
-    flex: 1,
-    height: 52,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderWidth: 1,
-    borderColor: '#241C35',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dropdownLabel: {
     color: TEXT_SECONDARY,
-    fontSize: 12,
-    fontWeight: '700',
-    position: 'absolute',
-    top: -8,
-    left: 12,
+    marginTop: 4,
+  },
+  carouselContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 28,
+  },
+  dayTab: {
+    width: 60,
+    height: 70,
     backgroundColor: CARD,
-    paddingHorizontal: 6,
-  },
-  dropdownValueWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    justifyContent: 'space-between',
-  },
-  dropdownValue: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  predictButton: {
-    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+  },
+  dayTabActive: {
+    backgroundColor: ACCENT,
+    borderColor: ACCENT,
+  },
+  dayTabText: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dayTabTextActive: {
+    color: TEXT_PRIMARY,
+  },
+  dotMarker: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: ACCENT_EMERALD,
-    height: 54,
-    borderRadius: 16,
-    gap: 8,
-    marginTop: 12,
-    shadowColor: ACCENT_EMERALD,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
   },
-  predictButtonText: {
-    color: BG,
-    fontSize: 16,
-    fontWeight: '850',
-    letterSpacing: 0.5,
+  dotMarkerActive: {
+    backgroundColor: TEXT_PRIMARY,
   },
-  resultsCard: {
-    width: '100%',
-    maxWidth: 600,
-    backgroundColor: CARD,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: ACCENT_EMERALD,
-    padding: 20,
-    gap: 18,
-    shadowColor: ACCENT_EMERALD,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  resultsHeader: {
+  routineListHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-    paddingBottom: 12,
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  resultsTitle: {
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
     color: TEXT_PRIMARY,
-    fontSize: 16,
-    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  bmiBanner: {
-    width: '100%',
-    backgroundColor: 'rgba(0, 255, 135, 0.06)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 255, 135, 0.15)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  addRoutineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  bmiText: {
-    color: TEXT_SECONDARY,
+  addRoutineText: {
+    color: ACCENT_EMERALD,
     fontSize: 13,
     fontWeight: '700',
   },
-  highlightText: {
-    color: ACCENT_EMERALD,
-    fontWeight: '900',
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
   },
-  recommendationContainer: {
-    gap: 6,
-  },
-  recommendationLabel: {
+  emptyText: {
     color: TEXT_MUTED,
-    fontSize: 12,
+    fontSize: 13,
+    marginTop: 10,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  workoutCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CARD,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 18,
+    marginBottom: 12,
+  },
+  cardLeft: {
+    flex: 1,
+  },
+  categoryBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  volumeBadge: {
+    backgroundColor: 'rgba(0, 255, 135, 0.1)',
+  },
+  timeBadge: {
+    backgroundColor: 'rgba(138, 43, 226, 0.1)',
+  },
+  categoryBadgeText: {
+    color: TEXT_PRIMARY,
+    fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  recommendationText: {
+  workoutTitle: {
     color: TEXT_PRIMARY,
     fontSize: 16,
-    fontWeight: '800',
-    lineHeight: 22,
+    fontWeight: '700',
   },
-  divider: {
-    height: 1,
-    backgroundColor: BORDER,
-  },
-  breakdownTitle: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: -4,
-  },
-  exercisesList: {
-    gap: 10,
-  },
-  exerciseItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 14,
-    padding: 12,
-  },
-  exerciseLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  dayBadge: {
-    backgroundColor: 'rgba(138, 43, 226, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(138, 43, 226, 0.3)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  dayBadgeText: {
-    color: ACCENT_VIOLET,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  exerciseName: {
-    color: TEXT_PRIMARY,
+  workoutStats: {
+    color: TEXT_SECONDARY,
     fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
-  },
-  exerciseReps: {
-    color: ACCENT_EMERALD,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  saveButton: {
-    width: '100%',
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: ACCENT_VIOLET,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#1E1E2A',
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: TEXT_PRIMARY,
-    fontSize: 15,
-    fontWeight: '800',
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 30,
+  },
+  modalScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: 'rgba(18, 18, 26, 0.95)',
+    backgroundColor: CARD,
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: BORDER,
     padding: 24,
-    gap: 14,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
     color: TEXT_PRIMARY,
-    fontSize: 16,
-    fontWeight: '850',
-    textAlign: 'center',
   },
-  modalSeparator: {
-    height: 1,
-    backgroundColor: BORDER,
+  inputLabel: {
+    color: TEXT_PRIMARY,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
   },
-  pickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  input: {
+    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 12,
-    paddingVertical: 14,
     paddingHorizontal: 16,
-  },
-  pickerItemText: {
     color: TEXT_PRIMARY,
     fontSize: 14,
-    fontWeight: '600',
+    marginBottom: 16,
   },
-  pickerCancelButton: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
+  formRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  pickerCancelText: {
-    color: '#EF4444',
-    fontSize: 14,
-    fontWeight: '750',
+  categorySelector: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
   },
-  alertOverlay: {
+  categoryBtn: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'center',
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: BORDER,
     alignItems: 'center',
-    paddingHorizontal: 30,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  },
+  categoryBtnActive: {
+    backgroundColor: ACCENT,
+    borderColor: ACCENT,
+  },
+  categoryBtnText: {
+    color: TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  categoryBtnTextActive: {
+    color: TEXT_PRIMARY,
+    fontWeight: '700',
+  },
+  saveBtn: {
+    height: 48,
+    backgroundColor: ACCENT_EMERALD,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  saveBtnText: {
+    color: BG,
+    fontWeight: '800',
+    fontSize: 14,
   },
   alertCard: {
     width: '100%',
-    backgroundColor: '#1E1E1E',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
-    paddingVertical: 32,
-    paddingHorizontal: 24,
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 24,
     alignItems: 'center',
   },
   alertMessage: {
     fontSize: 15,
-    color: TEXT_SECONDARY,
+    color: TEXT_PRIMARY,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 28,
+    marginBottom: 20,
   },
   alertButton: {
     width: '100%',
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: ACCENT_VIOLET,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   alertButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: TEXT_PRIMARY,
   },
 });
+

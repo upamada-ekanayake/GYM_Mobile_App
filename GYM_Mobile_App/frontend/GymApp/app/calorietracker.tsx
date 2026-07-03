@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,19 @@ import {
   ActivityIndicator,
   Modal,
   Keyboard,
+  Image,
+  Dimensions,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import HamburgerMenu from '../components/HamburgerMenu';
+import { Session } from '../constants/Session';
 
-/* ── Colour Tokens (matching app-wide theme) ── */
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/* ── Colour Tokens (AuraFit Premium Theme) ── */
 const ACCENT = '#8A2BE2'; // Aura Violet
 const ACCENT_EMERALD = '#00FF87'; // Neon Emerald
 const BG = '#08080C'; // Deep Obsidian
@@ -25,50 +31,46 @@ const BORDER = '#241C35'; // Deep Violet Border
 const TEXT_PRIMARY = '#FFFFFF';
 const TEXT_SECONDARY = '#B3AEC6';
 const TEXT_MUTED = '#5C5570';
-const ERROR_RED = '#EF4444';
 const SUCCESS_GREEN = '#22C55E';
+const ERROR_RED = '#EF4444';
+
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.5:5000';
 
+interface CalorieLogEntry {
+  timestamp: string;
+  foodName: string;
+  calories: number;
+}
+
 export default function CalorieTrackerScreen() {
-  const { role } = useLocalSearchParams();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const router = useRouter();
+  const userId = Session.getUserId();
 
-  /* ── Keyboard Height State ── */
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  /* ── State Hooks ── */
+  const [calorieTarget, setCalorieTarget] = useState<number>(2000); // default
+  const [calorieLogs, setCalorieLogs] = useState<CalorieLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+  
+  /* ── Scan Modal State ── */
+  const [scanModalVisible, setScanModalVisible] = useState<boolean>(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<{ food_detected?: string; calories_predicted?: number } | null>(null);
+  
+  /* ── Manual Entry State ── */
+  const [manualFood, setManualFood] = useState<string>('');
+  const [manualCal, setManualCal] = useState<string>('');
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
-  /* ── Form State ── */
-  const [gender, setGender] = useState<'Male' | 'Female' | null>(null);
-  const [age, setAge] = useState('');
-  const [weight, setWeight] = useState('');
-  const [height, setHeight] = useState('');
-  const [hours, setHours] = useState('');
-  const [minutes, setMinutes] = useState('');
-  const [workoutType, setWorkoutType] = useState<'HIIT' | 'Strength' | 'Yoga' | 'Cardio' | null>(null);
-
-  /* ── Calculation State ── */
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [predictedCalories, setPredictedCalories] = useState<number | null>(null);
-
-  /* ── Keyboard Listener ── */
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  /* ── Custom Popup State ── */
-  const [popup, setPopup] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success' | 'info' }>({
+  /* ── Custom Popup Alert State ── */
+  const [popup, setPopup] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'success' | 'info';
+  }>({
     visible: false,
     title: '',
     message: '',
@@ -83,444 +85,365 @@ export default function CalorieTrackerScreen() {
     setPopup({ visible: false, title: '', message: '', type: 'info' });
   };
 
-  /* ── Frontend Validation ── */
-  const validateForm = (): boolean => {
-    if (gender === null) {
-      showPopup('Validation Error', 'Please select your Gender.', 'error');
-      return false;
-    }
+  /* ── Request Camera Permissions ── */
+  useEffect(() => {
+    (async () => {
+      if (Platform.OS !== 'web') {
+        const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+        const { status: libraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (cameraStatus !== 'granted' || libraryStatus !== 'granted') {
+          showPopup('Permissions Required', 'AuraFit needs camera and photos access to scan meals.', 'info');
+        }
+      }
+    })();
+  }, []);
 
-    if (!age.trim()) {
-      showPopup('Validation Error', 'Please enter your Age.', 'error');
-      return false;
+  /* ── Fetch User Details & Logs ── */
+  const loadUserDetails = async () => {
+    if (!userId) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user/user-details/${userId}`);
+      const data = await response.json();
+      if (response.ok && data.user) {
+        if (data.user.CalorieTarget) {
+          setCalorieTarget(Number(data.user.CalorieTarget));
+        }
+        if (data.user.CalorieLog) {
+          setCalorieLogs(data.user.CalorieLog);
+        }
+      }
+    } catch (err) {
+      console.warn('Error loading calorie logs:', err);
+    } finally {
+      setIsLoading(false);
     }
-    if (!/^\d+$/.test(age)) {
-      showPopup('Validation Error', 'Only numeric values are allowed for Age.', 'error');
-      return false;
-    }
-    const ageNum = Number(age);
-    if (ageNum < 0) {
-      showPopup('Validation Error', 'Age cannot be negative.', 'error');
-      return false;
-    }
-
-    if (!weight.trim()) {
-      showPopup('Validation Error', 'Please enter your Weight.', 'error');
-      return false;
-    }
-    if (isNaN(Number(weight))) {
-      showPopup('Validation Error', 'Only numeric values are allowed for Weight.', 'error');
-      return false;
-    }
-    const weightNum = Number(weight);
-    if (weightNum < 0) {
-      showPopup('Validation Error', 'Weight cannot be negative.', 'error');
-      return false;
-    }
-
-    if (!height.trim()) {
-      showPopup('Validation Error', 'Please enter your Height.', 'error');
-      return false;
-    }
-    if (isNaN(Number(height))) {
-      showPopup('Validation Error', 'Only numeric values are allowed for Height.', 'error');
-      return false;
-    }
-    const heightNum = Number(height);
-    if (heightNum < 0) {
-      showPopup('Validation Error', 'Height cannot be negative.', 'error');
-      return false;
-    }
-
-    if (!hours.trim()) {
-      showPopup('Validation Error', 'Please enter Session Duration Hours.', 'error');
-      return false;
-    }
-    if (!/^\d+$/.test(hours)) {
-      showPopup('Validation Error', 'Hours must be a valid numeric integer.', 'error');
-      return false;
-    }
-    const hoursNum = Number(hours);
-    if (hoursNum < 0 || hoursNum > 24) {
-      showPopup('Validation Error', 'Hours must be between 0 and 24.', 'error');
-      return false;
-    }
-
-    if (!minutes.trim()) {
-      showPopup('Validation Error', 'Please enter Session Duration Minutes.', 'error');
-      return false;
-    }
-    if (!/^\d+$/.test(minutes)) {
-      showPopup('Validation Error', 'Minutes must be a valid numeric integer.', 'error');
-      return false;
-    }
-    const minsNum = Number(minutes);
-    if (minsNum < 0 || minsNum > 59) {
-      showPopup('Validation Error', 'Minutes must be between 0 and 59.', 'error');
-      return false;
-    }
-
-    if (!workoutType) {
-      showPopup('Validation Error', 'Please select a Workout Type.', 'error');
-      return false;
-    }
-
-    return true;
   };
 
-  /* ── Predict Calories Burned ── */
-  const handleCalculate = async () => {
-    if (!validateForm()) return;
+  useEffect(() => {
+    loadUserDetails();
+  }, [userId]);
 
-    const startTime = Date.now();
+  /* ── Calculate Today's Intake ── */
+  const getTodayCalories = () => {
+    const todayStr = new Date().toDateString();
+    return calorieLogs
+      .filter((log) => new Date(log.timestamp).toDateString() === todayStr)
+      .reduce((sum, log) => sum + log.calories, 0);
+  };
 
-    // Dismiss Mobile Keyboard & remove focus
-    Keyboard.dismiss();
+  const todayCalories = getTodayCalories();
+  const remainingCalories = Math.max(calorieTarget - todayCalories, 0);
+  const percentage = Math.min(Math.round((todayCalories / calorieTarget) * 100), 100);
 
-    setIsCalculating(true);
+  /* ── Log Calorie intake ── */
+  const handleAddCalorie = async (foodName: string, calories: number) => {
+    if (!userId) {
+      showPopup('Session Expired', 'Please login to track your daily intake.', 'error');
+      return;
+    }
+    if (!foodName.trim() || calories < 0 || isNaN(calories)) {
+      showPopup('Invalid Entry', 'Please enter valid food details.', 'error');
+      return;
+    }
 
-    const mappedGender = gender === 'Male' ? 1 : 0;
-    const mappedHIIT = workoutType === 'HIIT' ? 1 : 0;
-    const mappedStrength = workoutType === 'Strength' ? 1 : 0;
-    const mappedYoga = workoutType === 'Yoga' ? 1 : 0;
-
+    setIsActionLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/ai-Model/predict-calories`, {
-        method: 'POST',
+      const response = await fetch(`${BACKEND_URL}/api/user/user-log-calorie/${userId}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          Age: Number(age),
-          Gender: mappedGender,
-          Weight: Number(weight),
-          Height: Number(height),
-          Hours: Number(hours),
-          mins: Number(minutes),
-          Workout_Type_HIIT: mappedHIIT,
-          Workout_Type_Strength: mappedStrength,
-          Workout_Type_Yoga: mappedYoga,
-        }),
+        body: JSON.stringify({ foodName: foodName.trim(), calories }),
       });
 
       const data = await response.json();
-
-      if (response.status === 200 && data.success) {
-        const elapsed = Date.now() - startTime;
-        const delay = Math.max(0, 320 - elapsed); // Wait for the keyboard slide-down animation to complete fully
-
-        setTimeout(() => {
-          setPredictedCalories(data.calories_burned);
-          
-          // Smoothly scroll to the bottom to display the result card
-          setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }, delay);
+      if (response.ok) {
+        setCalorieLogs((prev) => [...prev, data.entry]);
+        setManualFood('');
+        setManualCal('');
+        showPopup('Meal Logged', `${foodName} (${calories} kcal) added!`, 'success');
       } else {
-        showPopup('Prediction Error', data.message || 'Failed to calculate calorie prediction.', 'error');
+        showPopup('Error', data.message || 'Could not log intake.', 'error');
       }
-    } catch (err: any) {
-      showPopup('Network Error', 'Could not connect to the backend server.', 'error');
+    } catch (err) {
+      showPopup('Error', 'Network connection failure.', 'error');
     } finally {
-      const elapsed = Date.now() - startTime;
-      const delay = Math.max(0, 320 - elapsed);
-      setTimeout(() => {
-        setIsCalculating(false);
-      }, delay);
+      setIsActionLoading(false);
     }
   };
+
+  /* ── Snap Photo ── */
+  const takePhoto = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+        setImageBase64(result.assets[0].base64 || null);
+        setScanResult(null);
+      }
+    } catch (err) {
+      showPopup('Camera Error', 'Failed to capture photo.', 'error');
+    }
+  };
+
+  /* ── Pick Image ── */
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+        setImageBase64(result.assets[0].base64 || null);
+        setScanResult(null);
+      }
+    } catch (err) {
+      showPopup('Image Error', 'Failed to select image.', 'error');
+    }
+  };
+
+  /* ── Trigger AI Scan ── */
+  const handleAIScan = async () => {
+    if (!imageBase64) {
+      showPopup('Error', 'Please select or capture an image first.', 'error');
+      return;
+    }
+
+    setIsScanning(true);
+    setStatusMessage('Analyzing food composition...');
+
+    try {
+      const token = Session.getToken();
+      const response = await fetch(`${BACKEND_URL}/api/ai-Model/predict-food`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ imageBase64 })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setScanResult(data);
+        // Automatically save to daily calorie logs
+        const name = data.food_detected || 'Scanned Meal';
+        const cals = data.calories_predicted || 250;
+        await handleAddCalorie(name, cals);
+        setScanModalVisible(false);
+      } else {
+        showPopup('Scanner Error', data.message || 'AI prediction model failed.', 'error');
+      }
+    } catch (err: any) {
+      showPopup('Network Error', err.message || 'Error communicating with AI microservice.', 'error');
+    } finally {
+      setIsScanning(false);
+      setImageUri(null);
+      setImageBase64(null);
+    }
+  };
+
+  const formatTime = (isoString: string) => {
+    const d = new Date(isoString);
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+    return `${hours}:${minutesStr} ${ampm}`;
+  };
+
+  const todayLogs = calorieLogs.filter(
+    (log) => new Date(log.timestamp).toDateString() === new Date().toDateString()
+  );
 
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
+      <HamburgerMenu currentRole="User" />
 
-      {/* ── Hamburger Menu ── */}
-      <HamburgerMenu currentRole={(role as any) || 'User'} />
-
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={ACCENT} />
+          <Text style={styles.loadingText}>Analyzing calorie profile...</Text>
+        </View>
+      ) : (
         <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 40 : 60 }
-          ]}
-          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {/* ── Decorative Glow Accent ── */}
-          <View style={styles.glowCircle} />
-
-          {/* ── Proper Page Heading ── */}
-          <Text style={styles.pageTitle}>AuraFit Calorie Tracker</Text>
-          <View style={styles.titleUnderline} />
-
-          {/* ── Form Container ── */}
-          <View style={styles.formContainer}>
-            
-            {/* 1. Gender Selection */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Gender</Text>
-              <View style={styles.genderContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.genderCard,
-                    gender === 'Male' && styles.genderCardActive,
-                  ]}
-                  onPress={() => setGender('Male')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="male-outline"
-                    size={22}
-                    color={gender === 'Male' ? '#FFFFFF' : TEXT_SECONDARY}
-                  />
-                  <Text style={[styles.genderText, gender === 'Male' && styles.genderTextActive]}>
-                    Male
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.genderCard,
-                    gender === 'Female' && styles.genderCardActive,
-                  ]}
-                  onPress={() => setGender('Female')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="female-outline"
-                    size={22}
-                    color={gender === 'Female' ? '#FFFFFF' : TEXT_SECONDARY}
-                  />
-                  <Text style={[styles.genderText, gender === 'Female' && styles.genderTextActive]}>
-                    Female
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* 2. Age Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Age</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="calendar-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your age"
-                  placeholderTextColor={TEXT_MUTED}
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  value={age}
-                  onChangeText={setAge}
-                />
-              </View>
-            </View>
-
-            {/* 3 & 4. Weight & Height side-by-side */}
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Weight (kg)</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="fitness-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 70"
-                    placeholderTextColor={TEXT_MUTED}
-                    keyboardType="numeric"
-                    value={weight}
-                    onChangeText={setWeight}
-                  />
-                </View>
-              </View>
-
-              <View style={{ width: 16 }} />
-
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Height (cm)</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="resize-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 175"
-                    placeholderTextColor={TEXT_MUTED}
-                    keyboardType="numeric"
-                    value={height}
-                    onChangeText={setHeight}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* 5. Session Duration */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Session Duration</Text>
-              <View style={styles.row}>
-                <View style={[styles.inputWrapper, { flex: 1 }]}>
-                  <Ionicons name="time-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Hours"
-                    placeholderTextColor={TEXT_MUTED}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={hours}
-                    onChangeText={setHours}
-                  />
-                </View>
-
-                <View style={{ width: 16 }} />
-
-                <View style={[styles.inputWrapper, { flex: 1 }]}>
-                  <Ionicons name="stopwatch-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Minutes"
-                    placeholderTextColor={TEXT_MUTED}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={minutes}
-                    onChangeText={setMinutes}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* 6. Workout Type Selection */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Workout Type</Text>
-              <View style={styles.workoutContainer}>
-                <View style={styles.workoutRow}>
-                  {/* HIIT */}
-                  <TouchableOpacity
-                    style={[
-                      styles.workoutCard,
-                      workoutType === 'HIIT' && styles.workoutCardActive,
-                    ]}
-                    onPress={() => setWorkoutType('HIIT')}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="thunderstorm-outline"
-                      size={20}
-                      color={workoutType === 'HIIT' ? '#FFFFFF' : ACCENT}
-                    />
-                    <Text style={[styles.workoutText, workoutType === 'HIIT' && styles.workoutTextActive]}>
-                      HIIT
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Strength */}
-                  <TouchableOpacity
-                    style={[
-                      styles.workoutCard,
-                      workoutType === 'Strength' && styles.workoutCardActive,
-                    ]}
-                    onPress={() => setWorkoutType('Strength')}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="barbell-outline"
-                      size={20}
-                      color={workoutType === 'Strength' ? '#FFFFFF' : ACCENT}
-                    />
-                    <Text style={[styles.workoutText, workoutType === 'Strength' && styles.workoutTextActive]}>
-                      Strength
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.workoutRow}>
-                  {/* Yoga */}
-                  <TouchableOpacity
-                    style={[
-                      styles.workoutCard,
-                      workoutType === 'Yoga' && styles.workoutCardActive,
-                    ]}
-                    onPress={() => setWorkoutType('Yoga')}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="body-outline"
-                      size={20}
-                      color={workoutType === 'Yoga' ? '#FFFFFF' : ACCENT}
-                    />
-                    <Text style={[styles.workoutText, workoutType === 'Yoga' && styles.workoutTextActive]}>
-                      Yoga
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Cardio */}
-                  <TouchableOpacity
-                    style={[
-                      styles.workoutCard,
-                      workoutType === 'Cardio' && styles.workoutCardActive,
-                    ]}
-                    onPress={() => setWorkoutType('Cardio')}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="heart-outline"
-                      size={20}
-                      color={workoutType === 'Cardio' ? '#FFFFFF' : ACCENT}
-                    />
-                    <Text style={[styles.workoutText, workoutType === 'Cardio' && styles.workoutTextActive]}>
-                      Cardio
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.pageTitle}>Calorie Hub</Text>
+            <Text style={styles.subTitle}>Manage and balance daily intake budget</Text>
           </View>
 
-          {/* ── 7. Predict Calories Button ── */}
-          <TouchableOpacity
-            style={[styles.calculateButton, isCalculating && styles.calculateButtonDisabled]}
-            onPress={handleCalculate}
-            activeOpacity={0.85}
-            disabled={isCalculating}
-          >
-            {isCalculating ? (
-              <View style={styles.loadingButtonContent}>
-                <ActivityIndicator size="small" color={BG} />
-                <Text style={styles.calculateButtonText}>Calculating...</Text>
+          {/* Calorie Ring Hub */}
+          <View style={styles.progressHub}>
+            <View style={styles.outerCircle}>
+              <View style={styles.innerCircle}>
+                <Ionicons name="flame" size={48} color={remainingCalories === 0 ? ACCENT_EMERALD : ACCENT} />
+                <Text style={styles.percentageText}>{remainingCalories} kcal</Text>
+                <Text style={styles.progressLabel}>
+                  Remaining of {calorieTarget} kcal ({percentage}%)
+                </Text>
               </View>
-            ) : (
-              <>
-                <Text style={styles.calculateButtonText}>Calculate Calories Burned</Text>
-                <Ionicons name="arrow-forward" size={20} color={BG} />
-              </>
-            )}
+            </View>
+          </View>
+
+          {/* AI Scan Trigger Banner */}
+          <TouchableOpacity
+            style={styles.scanBanner}
+            onPress={() => setScanModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <LinearGradientBackground />
+            <Ionicons name="sparkles" size={24} color="#FFFFFF" />
+            <View style={styles.scanBannerTextWrapper}>
+              <Text style={styles.scanBannerTitle}>Scan Meal with AI</Text>
+              <Text style={styles.scanBannerSub}>Compute and log calories instantly via photo</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
-          {/* ── 8. Prediction Result Card ── */}
-          {predictedCalories !== null && !isCalculating && (
-            <View style={styles.resultCard}>
-              <Text style={styles.resultEmojiText}>
-                🔥 {Math.round(predictedCalories)} cal
-              </Text>
-              <Text style={styles.resultLabelText}>Total Calories Burned</Text>
+          {/* Manual Entry Form */}
+          <View style={styles.customIntakeCard}>
+            <Text style={styles.cardHeader}>Manual Meal Entry</Text>
+            <View style={styles.formRow}>
+              <TextInput
+                style={[styles.input, { flex: 2 }]}
+                placeholder="Food name (e.g. Rice & Curry)"
+                placeholderTextColor={TEXT_MUTED}
+                value={manualFood}
+                onChangeText={setManualFood}
+              />
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Calories"
+                placeholderTextColor={TEXT_MUTED}
+                keyboardType="numeric"
+                value={manualCal}
+                onChangeText={setManualCal}
+              />
             </View>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => handleAddCalorie(manualFood, Number(manualCal))}
+              activeOpacity={0.8}
+              disabled={isActionLoading || !manualFood || !manualCal}
+            >
+              {isActionLoading ? (
+                <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+              ) : (
+                <Text style={styles.addButtonText}>Log Meal</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Today's Meals */}
+          <Text style={styles.sectionLabel}>Logged Meals Today</Text>
+          {todayLogs.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="nutrition-outline" size={32} color={TEXT_MUTED} />
+              <Text style={styles.emptyText}>No food logs for today yet.</Text>
+            </View>
+          ) : (
+            todayLogs.map((log, index) => (
+              <View key={index} style={styles.logCard}>
+                <View style={styles.logLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name="restaurant-outline" size={16} color={ACCENT} />
+                  </View>
+                  <View>
+                    <Text style={styles.logFoodName}>{log.foodName}</Text>
+                    <Text style={styles.logTime}>{formatTime(log.timestamp)}</Text>
+                  </View>
+                </View>
+                <Text style={styles.logCalAmount}>+{log.calories} kcal</Text>
+              </View>
+            ))
           )}
         </ScrollView>
+      )}
 
-      {/* ── Custom Popup Modal ── */}
+      {/* AI Food Scanner Overlay Modal */}
       <Modal
-        visible={popup.visible}
+        visible={scanModalVisible}
+        animationType="slide"
         transparent={true}
-        animationType="fade"
-        onRequestClose={dismissPopup}
+        onRequestClose={() => setScanModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalMessage}>{popup.message}</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>AuraFit AI Food Scanner</Text>
+              <TouchableOpacity onPress={() => setScanModalVisible(false)}>
+                <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
+              </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={dismissPopup}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.modalButtonText}>OK</Text>
+            {/* Preview Canvas */}
+            <View style={styles.canvasContainer}>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.previewImage} />
+              ) : (
+                <View style={styles.placeholderCanvas}>
+                  <Ionicons name="camera-outline" size={48} color={TEXT_MUTED} />
+                  <Text style={styles.placeholderText}>Capture photo to analyze meal composition</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Control buttons */}
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.controlButton} onPress={takePhoto}>
+                <Ionicons name="camera" size={20} color={TEXT_PRIMARY} />
+                <Text style={styles.controlText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.controlButton} onPress={pickImage}>
+                <Ionicons name="image" size={20} color={TEXT_PRIMARY} />
+                <Text style={styles.controlText}>Upload</Text>
+              </TouchableOpacity>
+            </View>
+
+            {imageUri && !isScanning && (
+              <TouchableOpacity style={styles.scanButton} onPress={handleAIScan}>
+                <Text style={styles.scanButtonText}>Analyze & Log Meal</Text>
+                <Ionicons name="sparkles" size={18} color={BG} />
+              </TouchableOpacity>
+            )}
+
+            {isScanning && (
+              <View style={styles.scanLoader}>
+                <ActivityIndicator size="small" color={ACCENT_EMERALD} />
+                <Text style={styles.scanLoaderText}>{statusMessage}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Alert popup */}
+      <Modal visible={popup.visible} transparent={true} animationType="fade" onRequestClose={dismissPopup}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.alertCard}>
+            <Text style={styles.alertMessage}>{popup.message}</Text>
+            <TouchableOpacity style={styles.alertButton} onPress={dismissPopup} activeOpacity={0.85}>
+              <Text style={styles.alertButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -529,271 +452,356 @@ export default function CalorieTrackerScreen() {
   );
 }
 
+// Inline fallback for expo-linear-gradient compatibility
+function LinearGradientBackground() {
+  return (
+    <View
+      style={[
+        StyleSheet.absoluteFillObject,
+        {
+          backgroundColor: '#8A2BE2',
+          opacity: 0.85,
+          borderRadius: 20,
+          zIndex: -1,
+        },
+      ]}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
-  /* ── Screen ── */
   screen: {
     flex: 1,
     backgroundColor: BG,
   },
-  keyboardView: {
+  loadingContainer: {
     flex: 1,
-  },
-  scrollContent: {
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 80 : 65,
-    paddingBottom: 60,
   },
-
-  /* ── Decorative Glow ── */
-  glowCircle: {
-    position: 'absolute',
-    top: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: ACCENT,
-    opacity: 0.08,
-  },
-
-  /* ── Page Title ── */
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-    letterSpacing: 0.8,
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  titleUnderline: {
-    width: 60,
-    height: 4,
-    backgroundColor: ACCENT,
-    borderRadius: 2,
-    marginBottom: 28,
-  },
-
-  /* ── Form Container ── */
-  formContainer: {
-    width: '100%',
-    gap: 18,
-    marginBottom: 28,
-  },
-  inputGroup: {
-    width: '100%',
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+  loadingText: {
     color: TEXT_SECONDARY,
-    marginBottom: 8,
-    letterSpacing: 0.3,
-    marginLeft: 4,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    paddingHorizontal: 16,
-    height: 56,
-    width: '100%',
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: TEXT_PRIMARY,
-    fontSize: 15,
-    height: '100%',
-  },
-  row: {
-    flexDirection: 'row',
-    width: '100%',
-  },
-
-  /* ── Gender Selection ── */
-  genderContainer: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  genderCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: CARD,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    borderRadius: 16,
-    height: 56,
-    gap: 8,
-  },
-  genderCardActive: {
-    backgroundColor: ACCENT,
-    borderColor: ACCENT,
-  },
-  genderText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: TEXT_SECONDARY,
-  },
-  genderTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* ── Workout Type Selection ── */
-  workoutContainer: {
-    gap: 12,
-    width: '100%',
-  },
-  workoutRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  workoutCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: CARD,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    borderRadius: 18,
-    height: 60,
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  workoutCardActive: {
-    backgroundColor: ACCENT,
-    borderColor: ACCENT,
-    shadowColor: ACCENT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  workoutText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: TEXT_SECONDARY,
-  },
-  workoutTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* ── Calculate Button ── */
-  calculateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: 56,
-    backgroundColor: ACCENT,
-    borderRadius: 16,
-    gap: 8,
-    shadowColor: ACCENT,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 10,
-    marginBottom: 28,
-  },
-  calculateButtonDisabled: {
-    opacity: 0.6,
-  },
-  loadingButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  calculateButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.6,
-  },
-
-  /* ── Prediction Result Card ── */
-  resultCard: {
-    width: '100%',
-    backgroundColor: CARD,
-    borderWidth: 1.5,
-    borderColor: ACCENT_EMERALD,
-    borderRadius: 24,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Shadow
-    shadowColor: ACCENT_EMERALD,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  resultEmojiText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: ACCENT_EMERALD,
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  resultLabelText: {
+    marginTop: 12,
     fontSize: 14,
     fontWeight: '600',
-    color: TEXT_SECONDARY,
-    textAlign: 'center',
   },
-
-  /* ── Custom Popup Modal ── */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 30,
-  },
-  modalCard: {
-    width: '100%',
-    backgroundColor: 'rgba(18, 18, 26, 0.95)',
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    paddingVertical: 32,
+  scrollContent: {
     paddingHorizontal: 24,
-    alignItems: 'center',
-    // Glass shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 20,
+    paddingTop: Platform.OS === 'ios' ? 100 : 90,
+    paddingBottom: 40,
   },
-  modalMessage: {
-    fontSize: 15,
-    color: TEXT_SECONDARY,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
+  header: {
+    marginBottom: 30,
   },
-  modalButton: {
-    width: '100%',
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: ACCENT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: '800',
     color: TEXT_PRIMARY,
     letterSpacing: 0.5,
   },
+  subTitle: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    marginTop: 4,
+  },
+  progressHub: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  outerCircle: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 6,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+  },
+  innerCircle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  percentageText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  progressLabel: {
+    fontSize: 11,
+    color: TEXT_SECONDARY,
+    marginTop: 4,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  scanBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    marginBottom: 30,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  scanBannerTextWrapper: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  scanBannerTitle: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scanBannerSub: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  customIntakeCard: {
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 20,
+    marginBottom: 30,
+  },
+  cardHeader: {
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  input: {
+    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 16,
+    color: TEXT_PRIMARY,
+    fontSize: 14,
+  },
+  addButton: {
+    width: '100%',
+    height: 48,
+    backgroundColor: ACCENT,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButtonText: {
+    color: TEXT_PRIMARY,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  sectionLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 16,
+    marginTop: 12,
+  },
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    backgroundColor: CARD,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+  },
+  emptyText: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    marginTop: 10,
+  },
+  logCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CARD,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 16,
+    marginBottom: 10,
+  },
+  logLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(138, 43, 226, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logFoodName: {
+    color: TEXT_PRIMARY,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  logTime: {
+    color: TEXT_SECONDARY,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  logCalAmount: {
+    color: ACCENT_EMERALD,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: CARD,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  canvasContainer: {
+    width: '100%',
+    height: 220,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  placeholderCanvas: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
+  placeholderText: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  controlButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  controlText: {
+    color: TEXT_PRIMARY,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scanButton: {
+    height: 50,
+    backgroundColor: ACCENT_EMERALD,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  scanButtonText: {
+    color: BG,
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  scanLoader: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  scanLoaderText: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  alertCard: {
+    width: '100%',
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    padding: 24,
+    alignItems: 'center',
+  },
+  alertMessage: {
+    fontSize: 15,
+    color: TEXT_PRIMARY,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  alertButton: {
+    width: '100%',
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
 });
+

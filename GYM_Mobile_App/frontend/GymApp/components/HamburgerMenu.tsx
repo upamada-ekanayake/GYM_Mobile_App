@@ -74,7 +74,7 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
       '/calorietracker',
       '/watertracker',
       '/progressdashboard',
-      '/foodscanner',
+      '/liveworkout',
       '/workoutplanner'
     ];
     return restrictedRoutes.includes(route);
@@ -187,7 +187,7 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
             {/* Sidebar Header */}
             <View style={styles.header}>
               <View style={styles.roleTag}>
-                <Ionicons name="shield-checkmark" size={16} color="#3B82F6" />
+                <Ionicons name="shield-checkmark" size={16} color="#8A2BE2" />
                 <Text style={styles.roleTagText}>{currentRole}</Text>
               </View>
 
@@ -327,18 +327,20 @@ export default function HamburgerMenu({ currentRole }: HamburgerMenuProps) {
                 <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/calorietracker').chevronColor} />
               </TouchableOpacity>
 
-              {/* 6.5 Food Scanner */}
-              <TouchableOpacity
-                style={getMenuItemStyles('/foodscanner').container}
-                onPress={() => handleItemPress('/foodscanner')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuItemLeft}>
-                  <Ionicons name="scan-outline" size={22} color={getMenuItemStyles('/foodscanner').iconColor} />
-                  <Text style={getMenuItemStyles('/foodscanner').text}>Food Scanner</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/foodscanner').chevronColor} />
-              </TouchableOpacity>
+              {/* 6.5 Live Workout (USER ONLY) */}
+              {currentRole === 'User' && (
+                <TouchableOpacity
+                  style={getMenuItemStyles('/liveworkout').container}
+                  onPress={() => handleItemPress('/liveworkout')}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuItemLeft}>
+                    <Ionicons name="play-circle-outline" size={22} color={getMenuItemStyles('/liveworkout').iconColor} />
+                    <Text style={getMenuItemStyles('/liveworkout').text}>Live Workout</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={getMenuItemStyles('/liveworkout').chevronColor} />
+                </TouchableOpacity>
+              )}
 
               {/* 7. Water Tracker */}
               <TouchableOpacity
@@ -456,14 +458,14 @@ const styles = StyleSheet.create({
   roleTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: 'rgba(138, 43, 226, 0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
     gap: 6,
   },
   roleTagText: {
-    color: '#3B82F6',
+    color: '#8A2BE2',
     fontWeight: '700',
     fontSize: 13,
   },
@@ -593,7 +595,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 50,
     borderRadius: 14,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#8A2BE2',
     alignItems: 'center',
     justifyContent: 'center',
   },

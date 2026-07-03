@@ -52,6 +52,13 @@ export default function UserRegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  /* ── Biometrics State ── */
+  const [gender, setGender] = useState<'Male' | 'Female' | null>(null);
+  const [userWeight, setUserWeight] = useState('');
+  const [userHeight, setUserHeight] = useState('');
+  const [activityLevel, setActivityLevel] = useState<'Low' | 'Moderate' | 'High' | null>(null);
+  const [workoutGoal, setWorkoutGoal] = useState<'Muscle Gain' | 'Weight Loss' | 'Fitness' | null>(null);
+
   /* ── UI State ── */
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -178,6 +185,29 @@ export default function UserRegisterScreen() {
       showPopup('Validation Error', 'Please enter your email address.', 'error');
       return false;
     }
+
+    // Biometrics Validation
+    if (!gender) {
+      showPopup('Validation Error', 'Please select your Gender.', 'error');
+      return false;
+    }
+    if (!userWeight.trim() || isNaN(Number(userWeight))) {
+      showPopup('Validation Error', 'Please enter a valid Weight in kg.', 'error');
+      return false;
+    }
+    if (!userHeight.trim() || isNaN(Number(userHeight))) {
+      showPopup('Validation Error', 'Please enter a valid Height in cm.', 'error');
+      return false;
+    }
+    if (!activityLevel) {
+      showPopup('Validation Error', 'Please select your Activity Level.', 'error');
+      return false;
+    }
+    if (!workoutGoal) {
+      showPopup('Validation Error', 'Please select your Workout Goal.', 'error');
+      return false;
+    }
+
     if (!password) {
       showPopup('Validation Error', 'Please enter a password.', 'error');
       return false;
@@ -203,6 +233,39 @@ export default function UserRegisterScreen() {
 
     setIsRegistering(true);
     try {
+      const weightNum = parseFloat(userWeight.trim());
+      const heightNum = parseFloat(userHeight.trim());
+      const ageNum = parseInt(userAge.trim());
+
+      // 1. Water Target Calculation
+      const waterTarget = Math.round(weightNum * 35); // weight in kg * 35ml
+
+      // 2. Calorie Target Calculation using Mifflin-St Jeor Formula
+      let bmr = (10 * weightNum) + (6.25 * heightNum) - (5 * ageNum);
+      if (gender === 'Male') {
+        bmr += 5;
+      } else {
+        bmr -= 161;
+      }
+
+      // Apply Activity Multiplier (Low: 1.2, Moderate: 1.55, High: 1.725)
+      let multiplier = 1.2;
+      if (activityLevel === 'Moderate') {
+        multiplier = 1.55;
+      } else if (activityLevel === 'High') {
+        multiplier = 1.725;
+      }
+      let tdee = bmr * multiplier;
+
+      // Adjust based on Workout Goal
+      let calorieTarget = tdee;
+      if (workoutGoal === 'Weight Loss') {
+        calorieTarget -= 500;
+      } else if (workoutGoal === 'Muscle Gain') {
+        calorieTarget += 500;
+      }
+      calorieTarget = Math.max(Math.round(calorieTarget), 1200);
+
       const response = await fetch(`${BACKEND_URL}/api/user/user-registration`, {
         method: 'POST',
         headers: {
@@ -217,6 +280,13 @@ export default function UserRegisterScreen() {
           Password: password,
           ConfirmPassword: confirmPassword,
           UserDP: uploadedImageUrl || 'None',
+          UserWeight: weightNum,
+          UserHeight: heightNum,
+          Gender: gender,
+          ActivityLevel: activityLevel,
+          WorkoutGoal: workoutGoal,
+          WaterTarget: waterTarget,
+          CalorieTarget: calorieTarget
         }),
       });
 
@@ -225,7 +295,6 @@ export default function UserRegisterScreen() {
       if (response.status === 201) {
         showPopup('Success', 'Successfully registered', 'success');
       } else {
-        // Display backend error messages as popup
         showPopup('Registration Failed', data.message || 'Something went wrong.', 'error');
       }
     } catch (error) {
@@ -386,6 +455,100 @@ export default function UserRegisterScreen() {
                 value={email}
                 onChangeText={setEmail}
               />
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.sectionDivider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>Biometrics</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Gender */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Gender</Text>
+            <View style={styles.pickerRow}>
+              <TouchableOpacity
+                style={[styles.pickerButton, gender === 'Male' && styles.pickerButtonActive]}
+                onPress={() => setGender('Male')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.pickerButtonText, gender === 'Male' && styles.pickerButtonTextActive]}>Male</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pickerButton, gender === 'Female' && styles.pickerButtonActive]}
+                onPress={() => setGender('Female')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.pickerButtonText, gender === 'Female' && styles.pickerButtonTextActive]}>Female</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Weight */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Weight (kg)</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="scale-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 70"
+                placeholderTextColor={TEXT_MUTED}
+                keyboardType="numeric"
+                value={userWeight}
+                onChangeText={setUserWeight}
+              />
+            </View>
+          </View>
+
+          {/* Height */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Height (cm)</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="resize-outline" size={20} color={TEXT_MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 175"
+                placeholderTextColor={TEXT_MUTED}
+                keyboardType="numeric"
+                value={userHeight}
+                onChangeText={setUserHeight}
+              />
+            </View>
+          </View>
+
+          {/* Activity Level */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Activity Level</Text>
+            <View style={styles.pickerRow}>
+              {(['Low', 'Moderate', 'High'] as const).map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[styles.pickerButton, activityLevel === level && styles.pickerButtonActive, { flex: 1 }]}
+                  onPress={() => setActivityLevel(level)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pickerButtonText, activityLevel === level && styles.pickerButtonTextActive]}>{level}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Workout Goal */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Workout Goal</Text>
+            <View style={styles.pickerRow}>
+              {(['Muscle Gain', 'Weight Loss', 'Fitness'] as const).map((goalOption) => (
+                <TouchableOpacity
+                  key={goalOption}
+                  style={[styles.pickerButton, workoutGoal === goalOption && styles.pickerButtonActive, { flex: 1 }]}
+                  onPress={() => setWorkoutGoal(goalOption)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pickerButtonText, workoutGoal === goalOption && styles.pickerButtonTextActive, { fontSize: 12 }]}>{goalOption}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -797,5 +960,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: TEXT_PRIMARY,
     letterSpacing: 0.5,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginTop: 6,
+  },
+  pickerButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#12121A',
+    borderWidth: 1.5,
+    borderColor: '#241C35',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerButtonActive: {
+    backgroundColor: '#8A2BE2',
+    borderColor: '#8A2BE2',
+  },
+  pickerButtonText: {
+    color: '#B3AEC6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pickerButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });

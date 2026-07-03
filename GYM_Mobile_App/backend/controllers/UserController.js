@@ -1,4 +1,4 @@
-const { auth, db } = require('../config/firebase');
+const { auth, db, admin } = require('../config/firebase');
 const axios = require('axios');
 require('dotenv').config();
 
@@ -18,7 +18,23 @@ const verifyPassword = async (email, password) => {
 // --- 01. User Registration --- //
 exports.User_Registration = async (req, res) => {
     try {
-        const { UserName, UserAge, UserNIC, UserContactNumber, Email, Password, ConfirmPassword, UserDP } = req.body;
+        const { 
+            UserName, 
+            UserAge, 
+            UserNIC, 
+            UserContactNumber, 
+            Email, 
+            Password, 
+            ConfirmPassword, 
+            UserDP,
+            UserWeight,
+            UserHeight,
+            Gender,
+            ActivityLevel,
+            WorkoutGoal,
+            WaterTarget,
+            CalorieTarget
+        } = req.body;
 
         // Validation
         if (!UserName || !UserAge || !UserNIC || !UserContactNumber || !Email || !Password || !ConfirmPassword) {
@@ -51,7 +67,16 @@ exports.User_Registration = async (req, res) => {
             UserDP: UserDP || null,
             Role: 'User',
             Approve: true,
-            Workouts: []
+            Workouts: [],
+            UserWeight: UserWeight ? Number(UserWeight) : null,
+            UserHeight: UserHeight ? Number(UserHeight) : null,
+            Gender: Gender || null,
+            ActivityLevel: ActivityLevel || null,
+            WorkoutGoal: WorkoutGoal || null,
+            WaterTarget: WaterTarget ? Number(WaterTarget) : null,
+            CalorieTarget: CalorieTarget ? Number(CalorieTarget) : null,
+            WaterLog: [],
+            CalorieLog: []
         };
 
         await db.collection('users').doc(userRecord.uid).set(userData);
@@ -274,6 +299,70 @@ exports.User_GetUserApprovalStatus = async (req, res) => {
         }
 
         res.status(200).json({ approvalStatus: userDoc.data().Approve });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// --- 10. Log Water Intake --- //
+exports.User_LogWater = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { amount } = req.body;
+
+        if (!amount || isNaN(Number(amount))) {
+            return res.status(400).json({ message: 'Valid water amount is required' });
+        }
+
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const timestamp = new Date().toISOString();
+        const entry = { timestamp, amount: Number(amount) };
+
+        await userRef.update({
+            WaterLog: admin.firestore.FieldValue.arrayUnion(entry)
+        });
+
+        res.status(200).json({
+            message: 'Water logged successfully',
+            entry
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// --- 11. Log Calorie Intake --- //
+exports.User_LogCalorie = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { foodName, calories } = req.body;
+
+        if (!foodName || calories === undefined || isNaN(Number(calories))) {
+            return res.status(400).json({ message: 'Food name and valid calorie values are required' });
+        }
+
+        const userRef = db.collection('users').doc(userId);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const timestamp = new Date().toISOString();
+        const entry = { timestamp, foodName, calories: Number(calories) };
+
+        await userRef.update({
+            CalorieLog: admin.firestore.FieldValue.arrayUnion(entry)
+        });
+
+        res.status(200).json({
+            message: 'Calorie logged successfully',
+            entry
+        });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
